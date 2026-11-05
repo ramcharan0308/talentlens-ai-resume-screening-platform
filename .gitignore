@@ -1,0 +1,47 @@
+# Dependencies
+/node_modules
+/.pnp
+.pnp.js
+.yarn/install-state.gz
+
+# Next.js Build Outputs
+/.next/
+/out/
+/build
+
+# Testing & Coverage
+/coverage
+
+# Environment Configuration
+# Explicitly ignore all .env files, but allow .env.example
+.env
+.env.*
+!.env.example
+
+# Prisma Generated Client & Engines (if custom)
+# prisma/generated/
+
+# Uploads & Temporary files (for local file driver)
+/public/uploads/
+/uploads/
+*.tmp
+
+# Operating System Files
+.DS_Store
+Thumbs.db
+*.pem
+
+# IDE & Editor Settings
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Debug & Execution Logs
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# TypeScript Cache
+*.tsbuildinfo
+next-env.d.ts

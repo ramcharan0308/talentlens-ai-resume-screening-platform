@@ -1,0 +1,305 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ----------------------------------------------------
+// Enums
+// ----------------------------------------------------
+
+enum UserRole {
+  RECRUITER
+  CLIENT_HIRING_MGR
+  DELIVERY_HEAD
+}
+
+enum OrganizationType {
+  AGENCY
+  CLIENT
+}
+
+enum RequisitionStatus {
+  DRAFT
+  ACTIVE
+  FILLED
+  ARCHIVED
+}
+
+enum CandidatePurgeStatus {
+  ACTIVE
+  PURGE_REQUESTED
+  PURGED
+}
+
+enum DocumentProcessingStatus {
+  PENDING
+  PARSING
+  EXTRACTED
+  SCANNED_UNREADABLE
+  FAILED
+}
+
+enum BatchJobStatus {
+  QUEUED
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+enum BatchItemStatus {
+  QUEUED
+  PROCESSING
+  COMPLETED
+  DUPLICATE_SKIPPED
+  FAILED
+}
+
+enum ApplicationStatus {
+  SOURCED
+  SCREENED
+  SUBMITTED_TO_CLIENT
+  CLIENT_SHORTLISTED
+  CLIENT_REJECTED
+  INTERVIEW_PROPOSED
+  JOINED
+  REJECTED
+}
+
+enum ConsentStatus {
+  PENDING_VERIFICATION
+  ACTIVE
+  WITHDRAWN
+}
+
+enum ConsentEvidenceType {
+  PORTAL_AUTH_SESSION
+  SIGNED_DOCUMENT
+  EMAIL_CONFIRMATION
+}
+
+// ----------------------------------------------------
+// Models
+// ----------------------------------------------------
+
+model Organization {
+  id        String           @id @default(uuid())
+  name      String
+  type      OrganizationType
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  users        User[]
+  requisitions Requisition[]
+  candidates   Candidate[]      @relation("AgencyCandidates")
+  documents    UploadedDocument[] @relation("AgencyDocuments")
+  consents     ConsentRecord[]  @relation("AgencyConsents")
+  batchJobs    BatchUploadJob[] @relation("AgencyBatchJobs")
+  auditLogs    AuditLog[]
+
+  @@index([type])
+}
+
+model User {
+  id             String       @id @default(uuid())
+  name           String
+  email          String       @unique
+  passwordHash   String?      // Auth-related field for credential / hashed password management
+  role           UserRole
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  requisitionsCreated Requisition[]   @relation("RequisitionCreator")
+  verifiedConsents    ConsentRecord[] @relation("ConsentVerifier")
+  auditLogs           AuditLog[]      @relation("ActorAuditLogs")
+
+  @@index([organizationId, role])
+  @@index([email])
+}
+
+model Requisition {
+  id             String            @id @default(uuid())
+  title          String
+  jobDescription String            @db.Text
+  status         RequisitionStatus @default(DRAFT)
+  organizationId String
+  organization   Organization      @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  createdById    String
+  createdBy      User              @relation("RequisitionCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  applications      Application[]
+  batchJobs         BatchUploadJob[]
+
+  @@index([organizationId, status])
+  @@index([createdById])
+}
+
+model Candidate {
+  id                 String               @id @default(uuid())
+  candidateReference String               @unique // Pseudonymous identifier (e.g. CND-XXXXX)
+  agencyId           String               // Explicit agency ownership invariant (must be type AGENCY)
+  agency             Organization         @relation("AgencyCandidates", fields: [agencyId], references: [id], onDelete: Restrict)
+  purgeStatus        CandidatePurgeStatus @default(ACTIVE)
+  purgeRequestedAt   DateTime?
+  purgedAt           DateTime?
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+
+  applications      Application[]
+  uploadedDocuments UploadedDocument[]
+  consentRecords    ConsentRecord[]
+
+  @@index([agencyId])
+  @@index([candidateReference])
+  @@index([purgeStatus])
+}
+
+model UploadedDocument {
+  id                String                   @id @default(uuid())
+  agencyId          String                   // Agency-scoped document identity
+  agency            Organization             @relation("AgencyDocuments", fields: [agencyId], references: [id], onDelete: Restrict)
+  candidateId       String?                  // Nullable initially until candidate identity is resolved
+  candidate         Candidate?               @relation(fields: [candidateId], references: [id], onDelete: SetNull)
+  fileName          String
+  fileType          String
+  storageKey        String
+  fileHash          String                   // SHA-256 binary hash
+  processingStatus  DocumentProcessingStatus @default(PENDING)
+  extractedText     String?                  @db.Text
+  parsingWorkerId   String?
+  parsingLeaseToken String?
+  parsingLockedAt   DateTime?
+  parsingRetryCount Int                      @default(0)
+  createdAt         DateTime                 @default(now())
+  updatedAt         DateTime                 @updatedAt
+
+  batchItems        BatchFileItem[]
+
+  // Deduplication Invariant: Documents are unique per agency (not globally),
+  // preventing cross-tenant collisions and allowing reusable multi-requisition submissions.
+  // Requisition linkage is tracked per submission via BatchFileItem and Application.
+  @@unique([agencyId, fileHash])
+  @@index([agencyId])
+  @@index([candidateId])
+  @@index([fileHash])
+  @@index([processingStatus])
+}
+
+model BatchUploadJob {
+  id              String           @id @default(uuid())
+  agencyId        String           // Explicit agency scoping
+  agency          Organization     @relation("AgencyBatchJobs", fields: [agencyId], references: [id], onDelete: Restrict)
+  requisitionId   String
+  requisition     Requisition      @relation(fields: [requisitionId], references: [id], onDelete: Cascade)
+  status          BatchJobStatus   @default(QUEUED)
+  totalFiles      Int              @default(0) // Total distinct file items registered in batch
+  processedFiles  Int              @default(0) // Equals successfulFiles + failedFiles + duplicateFiles
+  successfulFiles Int              @default(0) // Items terminating in COMPLETED
+  failedFiles     Int              @default(0) // Items terminating in FAILED
+  duplicateFiles  Int              @default(0) // Items terminating in DUPLICATE_SKIPPED
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  items           BatchFileItem[]
+
+  @@index([agencyId])
+  @@index([requisitionId])
+  @@index([status])
+}
+
+model BatchFileItem {
+  id               String            @id @default(uuid())
+  batchJobId       String
+  batchJob         BatchUploadJob    @relation(fields: [batchJobId], references: [id], onDelete: Cascade)
+  idempotencyKey   String            // Client-provided unique key per file submission (e.g. batchId + clientFileUid)
+  originalFileName String
+  fileSizeBytes    Int
+  payloadHash      String?           // SHA-256 fingerprint of upload payload to detect key reuse with changed payload
+  fileHash         String?           // SHA-256 binary hash once computed
+  status           BatchItemStatus   @default(QUEUED)
+  documentId       String?           // Linked once agency-scoped UploadedDocument is matched or created
+  document         UploadedDocument? @relation(fields: [documentId], references: [id], onDelete: SetNull)
+  errorMessage     String?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  // Network Retry Invariant: A repeated HTTP request with the same idempotency key
+  // returns the existing batch item without re-incrementing totalFiles or duplicate tasks.
+  // Payload Mismatch: Reusing an idempotencyKey with a different payloadHash must be rejected (409 Conflict).
+  @@unique([batchJobId, idempotencyKey])
+  @@index([batchJobId, status])
+  @@index([batchJobId, fileHash])
+  @@index([documentId])
+}
+
+model Application {
+  id            String            @id @default(uuid())
+  candidateId   String
+  candidate     Candidate         @relation(fields: [candidateId], references: [id], onDelete: Restrict)
+  requisitionId String
+  requisition   Requisition       @relation(fields: [requisitionId], references: [id], onDelete: Restrict)
+  status        ApplicationStatus @default(SOURCED)
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  @@unique([candidateId, requisitionId]) // One application per candidate per requisition
+  @@index([requisitionId, status])
+  @@index([candidateId])
+}
+
+model ConsentRecord {
+  id                String              @id @default(uuid())
+  candidateId       String
+  candidate         Candidate           @relation(fields: [candidateId], references: [id], onDelete: Restrict)
+  agencyId          String
+  agency            Organization        @relation("AgencyConsents", fields: [agencyId], references: [id], onDelete: Restrict)
+  purpose           String              // Agency-scoped consent purpose (e.g. "RECRUITMENT_EVALUATION")
+  status            ConsentStatus       @default(PENDING_VERIFICATION)
+  evidenceType      ConsentEvidenceType
+  evidenceReference String              // Storage key, session token, or email confirmation reference
+  verifiedById      String?
+  verifiedBy        User?               @relation("ConsentVerifier", fields: [verifiedById], references: [id], onDelete: SetNull)
+  verifiedAt        DateTime?
+  withdrawnAt       DateTime?
+  createdAt         DateTime            @default(now())
+
+  @@index([candidateId, agencyId, status])
+  @@index([verifiedById])
+}
+
+// ----------------------------------------------------
+// AuditLog
+// ----------------------------------------------------
+// NOTE: "Append-only" is an application and database security invariant,
+// NOT an inherent property of the Prisma ORM. In production, this must be
+// enforced at the PostgreSQL privilege layer via:
+//   REVOKE UPDATE, DELETE, TRUNCATE ON TABLE "AuditLog" FROM talentlens_runtime;
+//   GRANT SELECT, INSERT ON TABLE "AuditLog" TO talentlens_runtime;
+// Direct personal identifiers (name, email, phone, CV text) are never stored here.
+// Only pseudonymous references (candidateReference, actorId) are preserved.
+model AuditLog {
+  id             String        @id @default(uuid())
+  actorId        String?
+  actor          User?         @relation("ActorAuditLogs", fields: [actorId], references: [id], onDelete: SetNull)
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  action         String
+  entityType     String
+  entityId       String
+  metadata       Json?
+  createdAt      DateTime      @default(now())
+
+  @@index([entityType, entityId])
+  @@index([organizationId, createdAt])
+  @@index([actorId])
+}
