@@ -1,5 +1,7 @@
+import Link from "next/link";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   FileText,
   Users,
@@ -9,6 +11,9 @@ import {
   Database,
   UserCheck,
   Building2,
+  Sliders,
+  Plus,
+  ArrowRight,
 } from "lucide-react";
 
 export default function Home() {
@@ -35,6 +40,21 @@ export default function Home() {
             AI-powered resume evaluation platform for Company A (Noida). High-volume bulk screening,
             anti-bias PII sanitization, grounded evidence quotation, and tenant-isolated client review portals.
           </p>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-3 pt-2">
+          <Link href="/requisitions">
+            <Button className="gap-2 shadow-sm">
+              <FileText className="h-4 w-4" />
+              <span>Open Requisitions Pipeline</span>
+            </Button>
+          </Link>
+          <Link href="/requisitions/new">
+            <Button variant="outline" className="gap-2">
+              <Plus className="h-4 w-4" />
+              <span>Create New Requisition</span>
+            </Button>
+          </Link>
         </div>
       </div>
 
@@ -231,6 +251,18 @@ export default function Home() {
               <Badge variant="outline" className="text-xs">REST APIs</Badge>
               <Badge variant="outline" className="text-xs">PostgreSQL / Hibernate</Badge>
             </div>
+          </div>
+
+          <div className="pt-2 border-t flex items-center justify-between">
+            <span className="text-xs text-muted-foreground">
+              Configured with 5 weighted scorecard criteria totaling 100% in Neon PostgreSQL.
+            </span>
+            <Link href="/requisitions">
+              <Button size="sm" variant="outline" className="text-xs gap-1.5 h-8">
+                <span>View Live Requisition & Scorecard</span>
+                <ArrowRight className="h-3.5 w-3.5" />
+              </Button>
+            </Link>
           </div>
         </CardContent>
       </Card>

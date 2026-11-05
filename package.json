@@ -7,6 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
+    "test": "npx tsx --test tests/**/*.test.ts",
+    "seed": "npx tsx prisma/seed.ts",
     "prisma:generate": "prisma generate",
     "prisma:validate": "prisma validate"
   },
