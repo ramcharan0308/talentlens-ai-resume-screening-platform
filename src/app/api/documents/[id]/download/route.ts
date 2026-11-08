@@ -52,21 +52,9 @@ export async function GET(
     }
 
     const storage = getStorageProvider();
-    const fileBuffer = await storage.get(doc.storageKey);
-
-    if (!fileBuffer) {
-      return NextResponse.json(
-        { success: false, error: "Document payload not found in secure storage." },
-        { status: 404 }
-      );
-    }
-
-    const mimeType =
-      doc.fileType === "application/pdf"
-        ? "application/pdf"
-        : "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-
     const isInline = req.nextUrl.searchParams.get("view") === "inline";
+    const candidateRef = doc.candidate?.candidateReference || "unlinked";
+    const downloadFileName = `${candidateRef}-${doc.fileName}`;
 
     // Compliance Audit: Log that original candidate CV was inspected/downloaded by the recruiter
     await prisma.auditLog.create({
@@ -86,8 +74,40 @@ export async function GET(
       },
     });
 
-    const candidateRef = doc.candidate?.candidateReference || "unlinked";
-    const downloadFileName = `${candidateRef}-${doc.fileName}`;
+    // Cloudflare R2 / S3 Presigned Private Download: Redirects to a short-lived presigned URL (10 min TTL)
+    const driver = (process.env.STORAGE_DRIVER || "local").toLowerCase();
+    if (
+      (driver === "r2" || driver === "s3") &&
+      typeof storage.getPresignedDownloadUrl === "function"
+    ) {
+      const presignedUrl = await storage.getPresignedDownloadUrl(
+        doc.storageKey,
+        600,
+        downloadFileName
+      );
+      if (req.nextUrl.searchParams.get("format") === "json") {
+        return NextResponse.json({
+          success: true,
+          downloadUrl: presignedUrl,
+          fileName: downloadFileName,
+        });
+      }
+      return NextResponse.redirect(presignedUrl, 307);
+    }
+
+    const fileBuffer = await storage.get(doc.storageKey);
+
+    if (!fileBuffer) {
+      return NextResponse.json(
+        { success: false, error: "Document payload not found in secure storage." },
+        { status: 404 }
+      );
+    }
+
+    const mimeType =
+      doc.fileType === "application/pdf"
+        ? "application/pdf"
+        : "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 
     return new Response(new Uint8Array(fileBuffer), {
       status: 200,

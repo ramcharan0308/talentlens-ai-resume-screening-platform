@@ -1,12 +1,27 @@
 import fs from "fs/promises";
 import path from "path";
 import crypto from "crypto";
+import { R2StorageProvider } from "./r2-provider";
 
 export interface StorageProvider {
-  put(storageKey: string, buffer: Buffer): Promise<{ storageKey: string; sizeBytes: number }>;
+  put(
+    storageKey: string,
+    buffer: Buffer,
+    mimeType?: string
+  ): Promise<{ storageKey: string; sizeBytes: number }>;
   get(storageKey: string): Promise<Buffer | null>;
   delete(storageKey: string): Promise<void>;
   exists(storageKey: string): Promise<boolean>;
+  getPresignedUploadUrl?(
+    storageKey: string,
+    mimeType: string,
+    expiresInSeconds?: number
+  ): Promise<{ uploadUrl: string; storageKey: string; headers: Record<string, string> }>;
+  getPresignedDownloadUrl?(
+    storageKey: string,
+    expiresInSeconds?: number,
+    downloadFileName?: string
+  ): Promise<string>;
 }
 
 export const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024; // 10 Megabytes
@@ -160,6 +175,28 @@ export class LocalStorageProvider implements StorageProvider {
       return false;
     }
   }
+
+  async getPresignedUploadUrl(
+    storageKey: string,
+    mimeType: string,
+    _expiresInSeconds = 900
+  ): Promise<{ uploadUrl: string; storageKey: string; headers: Record<string, string> }> {
+    return {
+      uploadUrl: `/api/storage/local-upload?key=${encodeURIComponent(storageKey)}`,
+      storageKey,
+      headers: {
+        "Content-Type": mimeType,
+      },
+    };
+  }
+
+  async getPresignedDownloadUrl(
+    storageKey: string,
+    _expiresInSeconds = 600,
+    downloadFileName?: string
+  ): Promise<string> {
+    return `/api/documents/${encodeURIComponent(storageKey)}/download`;
+  }
 }
 
 // Global storage singleton
@@ -167,8 +204,19 @@ let globalStorageInstance: StorageProvider | null = null;
 
 export function getStorageProvider(): StorageProvider {
   if (!globalStorageInstance) {
-    globalStorageInstance = new LocalStorageProvider();
+    const driver = (process.env.STORAGE_DRIVER || "local").toLowerCase();
+    if (driver === "r2" || driver === "s3") {
+      globalStorageInstance = new R2StorageProvider();
+    } else {
+      globalStorageInstance = new LocalStorageProvider();
+    }
   }
   return globalStorageInstance;
 }
+
+export function setStorageProvider(provider: StorageProvider | null): void {
+  globalStorageInstance = provider;
+}
+
+export { R2StorageProvider };
 

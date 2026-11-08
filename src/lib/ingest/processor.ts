@@ -20,7 +20,9 @@ const CONCURRENCY_LIMIT = 5;
 
 export interface IngestItemInput {
   fileName: string;
-  buffer: Buffer;
+  buffer?: Buffer;
+  existingStorageKey?: string;
+  fileSizeBytes?: number;
   idempotencyKey?: string;
 }
 
@@ -35,7 +37,9 @@ export interface IngestItemResult {
 }
 
 export async function processSingleFile(params: {
-  buffer: Buffer;
+  buffer?: Buffer;
+  existingStorageKey?: string;
+  fileSizeBytes?: number;
   originalFileName: string;
   agencyId: string;
   actorId?: string;
@@ -44,14 +48,39 @@ export async function processSingleFile(params: {
   idempotencyKey: string;
 }): Promise<IngestItemResult> {
   const {
-    buffer,
     originalFileName,
     agencyId,
     actorId,
     requisitionId,
     batchJobId,
     idempotencyKey,
+    existingStorageKey,
   } = params;
+
+  const storage = getStorageProvider();
+  let buffer = params.buffer;
+
+  if (!buffer && existingStorageKey) {
+    const fetched = await storage.get(existingStorageKey);
+    if (!fetched) {
+      return {
+        fileName: originalFileName,
+        idempotencyKey,
+        status: BatchItemStatus.FAILED,
+        errorMessage: "Uploaded file not found in storage. Direct upload may have failed or timed out.",
+      };
+    }
+    buffer = fetched;
+  }
+
+  if (!buffer) {
+    return {
+      fileName: originalFileName,
+      idempotencyKey,
+      status: BatchItemStatus.FAILED,
+      errorMessage: "No file content or storage reference provided.",
+    };
+  }
 
   // 1. Calculate SHA-256 fingerprint from raw file bytes
   const fileHash = crypto.createHash("sha256").update(buffer).digest("hex");
@@ -131,6 +160,15 @@ export async function processSingleFile(params: {
   });
 
   if (existingDoc) {
+    // If an existing storage key was provided from direct presigned upload, clean up orphan
+    if (existingStorageKey) {
+      try {
+        await storage.delete(existingStorageKey);
+      } catch {
+        // Safe to ignore duplicate cleanup error
+      }
+    }
+
     // Document already exists in agency pool.
     // If linking to a requisition and candidate exists, ensure Application record exists
     if (existingDoc.candidateId && requisitionId) {
@@ -170,28 +208,29 @@ export async function processSingleFile(params: {
   }
 
   // 5. Secure File Storage: Write to isolated storage outside public web root
-  const storageKey = generateStorageKey(validation.extension);
-  const storage = getStorageProvider();
+  const storageKey = existingStorageKey || generateStorageKey(validation.extension);
 
-  try {
-    await storage.put(storageKey, buffer);
-  } catch (storageErr) {
-    const errorMsg =
-      storageErr instanceof Error ? storageErr.message : "Failed to persist file to storage.";
-    await prisma.batchFileItem.update({
-      where: { id: batchItem.id },
-      data: {
+  if (!existingStorageKey) {
+    try {
+      await storage.put(storageKey, buffer, validation.detectedType);
+    } catch (storageErr) {
+      const errorMsg =
+        storageErr instanceof Error ? storageErr.message : "Failed to persist file to storage.";
+      await prisma.batchFileItem.update({
+        where: { id: batchItem.id },
+        data: {
+          status: BatchItemStatus.FAILED,
+          errorMessage: errorMsg,
+        },
+      });
+
+      return {
+        fileName: originalFileName,
+        idempotencyKey,
         status: BatchItemStatus.FAILED,
         errorMessage: errorMsg,
-      },
-    });
-
-    return {
-      fileName: originalFileName,
-      idempotencyKey,
-      status: BatchItemStatus.FAILED,
-      errorMessage: errorMsg,
-    };
+      };
+    }
   }
 
   // 6. Text Extraction (PDF / DOCX)
@@ -355,6 +394,8 @@ export async function executeBatchJob(params: {
 
         return processSingleFile({
           buffer: item.buffer,
+          existingStorageKey: item.existingStorageKey,
+          fileSizeBytes: item.fileSizeBytes,
           originalFileName: item.fileName,
           agencyId,
           actorId,
