@@ -4,6 +4,8 @@ import { requireAuth } from "@/lib/auth-guard";
 import { UserRole, OrganizationType } from "@prisma/client";
 import { screenCandidate, ScreeningError } from "@/lib/screening";
 
+export const MAX_SCREENING_CHUNK_SIZE = 15;
+
 export async function POST(
   request: NextRequest,
   context: { params: Promise<{ id: string }> }
@@ -89,6 +91,19 @@ export async function POST(
       );
     }
 
+    // Serverless Timeout Defense: Prevent blocking 500-candidate monolithic requests
+    if (targetCandidateIds.length > MAX_SCREENING_CHUNK_SIZE) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Screening chunk (${targetCandidateIds.length}) exceeds maximum limit of ${MAX_SCREENING_CHUNK_SIZE} candidates per request. Please submit candidates in chunks (recommended: 5) to prevent serverless execution timeouts.`,
+          maxChunkSize: MAX_SCREENING_CHUNK_SIZE,
+          totalRequested: targetCandidateIds.length,
+        },
+        { status: 400 }
+      );
+    }
+
     const results = [];
     const errors = [];
 
@@ -124,6 +139,8 @@ export async function POST(
 
     return NextResponse.json({
       success: true,
+      chunkIndex: typeof body.chunkIndex === "number" ? body.chunkIndex : undefined,
+      totalChunks: typeof body.totalChunks === "number" ? body.totalChunks : undefined,
       totalRequested: targetCandidateIds.length,
       evaluatedCount: results.length,
       evaluations: results,

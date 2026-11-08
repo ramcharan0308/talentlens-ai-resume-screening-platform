@@ -52,6 +52,12 @@ export function ResumeUploadClientView() {
   const [selectedReqId, setSelectedReqId] = React.useState<string>("");
   const [selectedFiles, setSelectedFiles] = React.useState<File[]>([]);
   const [isUploading, setIsUploading] = React.useState(false);
+  const [uploadProgress, setUploadProgress] = React.useState<{
+    current: number;
+    total: number;
+    fileName: string;
+    percent: number;
+  } | null>(null);
   const [uploadResult, setUploadResult] = React.useState<BatchUploadResponse | null>(null);
   const [errorMessage, setErrorMessage] = React.useState<string | null>(null);
   const [isDragging, setIsDragging] = React.useState(false);
@@ -146,31 +152,114 @@ export function ResumeUploadClientView() {
     }
 
     setIsUploading(true);
+    setUploadProgress(null);
 
     try {
-      const formData = new FormData();
-      formData.append("requisitionId", selectedReqId);
-      for (const file of selectedFiles) {
-        formData.append("files", file);
+      // Step 1: Request direct-to-storage presigned upload URLs (Cloudflare R2 / S3)
+      let presignSuccessful = false;
+      let presignData: any = null;
+
+      try {
+        const presignRes = await fetch("/api/resumes/presign", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            requisitionId: selectedReqId,
+            files: selectedFiles.map((f) => ({
+              fileName: f.name,
+              fileSizeBytes: f.size,
+              mimeType: f.type,
+            })),
+          }),
+        });
+
+        if (presignRes.ok) {
+          presignData = await presignRes.json();
+          if (presignData.success && Array.isArray(presignData.uploads)) {
+            presignSuccessful = true;
+          }
+        }
+      } catch (err) {
+        console.warn("Direct presigned upload negotiation failed, falling back to multipart:", err);
       }
 
-      const res = await fetch("/api/resumes/upload", {
-        method: "POST",
-        body: formData,
-      });
+      if (presignSuccessful && presignData?.uploads) {
+        // Step 2: Upload each file directly via HTTP PUT
+        const uploadedItems = [];
+        for (let i = 0; i < presignData.uploads.length; i++) {
+          const uploadInfo = presignData.uploads[i];
+          const file = selectedFiles[i];
 
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        setErrorMessage(data.error || "Batch ingestion failed.");
+          setUploadProgress({
+            current: i + 1,
+            total: presignData.uploads.length,
+            fileName: file.name,
+            percent: Math.round(((i + 1) / presignData.uploads.length) * 100),
+          });
+
+          const putRes = await fetch(uploadInfo.uploadUrl, {
+            method: "PUT",
+            headers: uploadInfo.headers || { "Content-Type": file.type || "application/pdf" },
+            body: file,
+          });
+
+          if (!putRes.ok) {
+            throw new Error(
+              `Direct storage upload failed for '${file.name}' (HTTP ${putRes.status}).`
+            );
+          }
+
+          uploadedItems.push({
+            fileName: uploadInfo.fileName,
+            storageKey: uploadInfo.storageKey,
+            fileSizeBytes: file.size,
+          });
+        }
+
+        // Step 3: Trigger batch ingestion confirmation (JSON only, zero file bytes pass through serverless function)
+        const ingestRes = await fetch("/api/resumes/upload", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            requisitionId: selectedReqId,
+            items: uploadedItems,
+          }),
+        });
+
+        const ingestData = await ingestRes.json();
+        if (!ingestRes.ok || !ingestData.success) {
+          setErrorMessage(ingestData.error || "Batch ingestion confirmation failed.");
+        } else {
+          setUploadResult(ingestData);
+          setSelectedFiles([]);
+        }
       } else {
-        setUploadResult(data);
-        setSelectedFiles([]);
+        // Fallback: Legacy multipart upload
+        const formData = new FormData();
+        formData.append("requisitionId", selectedReqId);
+        for (const file of selectedFiles) {
+          formData.append("files", file);
+        }
+
+        const res = await fetch("/api/resumes/upload", {
+          method: "POST",
+          body: formData,
+        });
+
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+          setErrorMessage(data.error || "Batch ingestion failed.");
+        } else {
+          setUploadResult(data);
+          setSelectedFiles([]);
+        }
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error("Upload failed:", err);
-      setErrorMessage("Network error occurred during batch resume upload.");
+      setErrorMessage(err.message || "Network error occurred during batch resume upload.");
     } finally {
       setIsUploading(false);
+      setUploadProgress(null);
     }
   };
 
@@ -351,6 +440,26 @@ export function ResumeUploadClientView() {
                 </div>
               )}
             </div>
+
+            {/* Direct-to-Storage Upload Progress */}
+            {isUploading && uploadProgress && (
+              <div className="p-3.5 bg-primary/10 border border-primary/25 rounded-xl space-y-2 animate-in fade-in">
+                <div className="flex items-center justify-between text-xs font-mono">
+                  <span className="text-primary flex items-center gap-2 font-medium">
+                    <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                    Direct Uploading {uploadProgress.current} of {uploadProgress.total}:{" "}
+                    <span className="truncate max-w-[200px] sm:max-w-xs">{uploadProgress.fileName}</span>
+                  </span>
+                  <span className="text-primary font-bold">{uploadProgress.percent}%</span>
+                </div>
+                <div className="h-1.5 w-full bg-muted/60 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-primary transition-all duration-200 rounded-full"
+                    style={{ width: `${uploadProgress.percent}%` }}
+                  />
+                </div>
+              </div>
+            )}
 
             <div className="pt-3 border-t border-border/60 flex items-center justify-between">
               <span className="text-xs text-muted-foreground">

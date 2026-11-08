@@ -72,11 +72,19 @@ export function StartScreeningDialog({
     errors?: Array<{ candidateId: string; error: string }>;
   } | null>(null);
   const [generalError, setGeneralError] = React.useState<string | null>(null);
+  const [progress, setProgress] = React.useState<{
+    currentChunk: number;
+    totalChunks: number;
+    processedCount: number;
+    totalCount: number;
+    percent: number;
+  } | null>(null);
 
   const handleClose = () => {
     setSelectedIds(new Set());
     setResults(null);
     setGeneralError(null);
+    setProgress(null);
     setSearch("");
     onClose();
   };
@@ -165,28 +173,64 @@ export function StartScreeningDialog({
     setGeneralError(null);
     setResults(null);
 
+    const allIds = Array.from(selectedIds);
+    // Reliable Serverless Chunking: Process in batches of 5 to avoid function timeouts
+    const CHUNK_SIZE = 5;
+    const totalChunks = Math.ceil(allIds.length / CHUNK_SIZE);
+    let totalEvaluated = 0;
+    const accumulatedErrors: Array<{ candidateId: string; error: string }> = [];
+
     try {
-      const res = await fetch(`/api/requisitions/${requisitionId}/screen`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          candidateIds: Array.from(selectedIds),
-        }),
+      for (let c = 0; c < totalChunks; c++) {
+        const chunkIds = allIds.slice(c * CHUNK_SIZE, (c + 1) * CHUNK_SIZE);
+        setProgress({
+          currentChunk: c + 1,
+          totalChunks,
+          processedCount: c * CHUNK_SIZE,
+          totalCount: allIds.length,
+          percent: Math.round(((c * CHUNK_SIZE) / allIds.length) * 100),
+        });
+
+        const res = await fetch(`/api/requisitions/${requisitionId}/screen`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            candidateIds: chunkIds,
+            chunkIndex: c,
+            totalChunks,
+          }),
+        });
+
+        const data = await res.json();
+
+        if (res.ok || data.evaluatedCount) {
+          totalEvaluated += data.evaluatedCount || 0;
+          if (Array.isArray(data.errors)) {
+            accumulatedErrors.push(...data.errors);
+          }
+        } else {
+          accumulatedErrors.push({
+            candidateId: chunkIds.join(", "),
+            error: data.error || `Batch ${c + 1} execution failed.`,
+          });
+        }
+      }
+
+      setProgress({
+        currentChunk: totalChunks,
+        totalChunks,
+        processedCount: allIds.length,
+        totalCount: allIds.length,
+        percent: 100,
       });
 
-      const data = await res.json();
-
-      if (!res.ok && !data.evaluatedCount) {
-        setGeneralError(data.error || "Screening failed to execute.");
-      } else {
-        setResults({
-          evaluatedCount: data.evaluatedCount || 0,
-          errors: data.errors,
-        });
-        onScreeningCompleted();
-      }
-    } catch (err: any) {
-      setGeneralError("Network error initiating screening.");
+      setResults({
+        evaluatedCount: totalEvaluated,
+        errors: accumulatedErrors.length > 0 ? accumulatedErrors : undefined,
+      });
+      onScreeningCompleted();
+    } catch {
+      setGeneralError("Network error occurred during screening execution.");
     } finally {
       setScreening(false);
     }
@@ -253,6 +297,25 @@ export function StartScreeningDialog({
                   </ul>
                 </div>
               )}
+            </div>
+          )}
+
+          {/* Live Serverless Chunked Progress Bar */}
+          {screening && progress && (
+            <div className="rounded-lg border border-primary/30 bg-primary/10 p-3.5 space-y-2 animate-in fade-in">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-mono text-primary flex items-center gap-2 font-medium">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
+                  Screening Batch {progress.currentChunk} of {progress.totalChunks} ({progress.processedCount}/{progress.totalCount} candidates)
+                </span>
+                <span className="font-mono text-xs font-semibold text-primary">{progress.percent}%</span>
+              </div>
+              <div className="h-2 w-full rounded-full bg-muted/60 overflow-hidden">
+                <div
+                  className="h-full bg-primary transition-all duration-300 rounded-full"
+                  style={{ width: `${progress.percent}%` }}
+                />
+              </div>
             </div>
           )}
 
