@@ -145,3 +145,4 @@ export function validateScorecardCriteria(
     data: errors.length === 0 ? criteria : undefined,
   };
 }
+

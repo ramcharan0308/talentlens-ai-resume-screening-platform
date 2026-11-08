@@ -1,8 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { PrismaClient, RequisitionStatus } from "@prisma/client";
-
-const prisma = new PrismaClient();
+import { RequisitionStatus } from "@prisma/client";
+import { prisma } from "../src/lib/prisma";
 
 test("Database Integration: Verify seeded requisitions and criteria", async () => {
   const requisitions = await prisma.requisition.findMany({
@@ -71,3 +70,4 @@ test("Database Invariant: Cascading deletion cleans up scorecard criteria", asyn
 test.after(async () => {
   await prisma.$disconnect();
 });
+

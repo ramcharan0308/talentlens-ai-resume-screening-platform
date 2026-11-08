@@ -1,51 +1,81 @@
+/* Plus Jakarta Sans — premium enterprise SaaS typography */
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 @layer base {
   :root {
-    --background: 210 20% 98%;
-    --foreground: 224 71% 4%;
-    --card: 0 0% 100%;
-    --card-foreground: 224 71% 4%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 224 71% 4%;
-    --primary: 221 83% 53%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 221 83% 53%;
-    --radius: 0.5rem;
+    /* ── Nordic Instrumentarium Design System (Tactile Basalt & Anodized Bronze) ── */
+    --background: 150 4% 5.5%;        /* #0D0F0E Deep Warm Mineral Basalt */
+    --foreground: 45 15% 96%;         /* #F7F6F2 Warm Bone Chalk */
+    --card: 150 4% 10.5%;             /* #1A1D1C Milled Basalt Card */
+    --card-foreground: 45 15% 96%;    /* #F7F6F2 */
+    --popover: 150 4% 13%;            /* #202422 Lifted Slate Surface */
+    --popover-foreground: 45 15% 96%;
+
+    /* Anodized Warm Bronze primary */
+    --primary: 36 82% 52%;            /* #E69124 Precision Optical Bronze */
+    --primary-foreground: 45 15% 98%;
+
+    /* Milled Slate Secondary */
+    --secondary: 150 4% 16%;          /* #252927 */
+    --secondary-foreground: 45 15% 96%;
+
+    /* Muted Basalt */
+    --muted: 150 4% 14%;              /* #222524 */
+    --muted-foreground: 45 8% 65%;    /* #A6A59D Muted Warm Slate */
+
+    --accent: 150 4% 18%;             /* #2A2E2C */
+    --accent-foreground: 45 15% 96%;
+
+    --destructive: 8 76% 54%;          /* #E54833 Cadmium Terracotta */
+    --destructive-foreground: 0 0% 100%;
+
+    /* Warm Chamfer hairline border: 1px semi-transparent warm stone */
+    --border: 45 8% 18%;              /* rgba(230,225,215,0.08) */
+    --input: 45 8% 18%;
+    --ring: 36 82% 52%;               /* Bronze focus ring */
+    --radius: 0.75rem;
+
+    /* ── Design Tokens ── */
+    --space-xs: 0.25rem;
+    --space-sm: 0.5rem;
+    --space-md: 1rem;
+    --space-lg: 1.5rem;
+    --space-xl: 2rem;
+    --space-2xl: 3rem;
+    --space-3xl: 4rem;
+
+    --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.4);
+    --shadow-md: 0 4px 12px 0 rgba(0, 0, 0, 0.5), 0 2px 4px -1px rgba(0, 0, 0, 0.3);
+    --shadow-lg: 0 12px 28px -4px rgba(0, 0, 0, 0.6), 0 4px 12px -2px rgba(0, 0, 0, 0.4);
+    --shadow-xl: 0 24px 48px -12px rgba(0, 0, 0, 0.7);
+    --shadow-glow-primary: 0 0 32px rgba(230, 145, 36, 0.22);
+    --shadow-glow-emerald: 0 0 32px rgba(16, 185, 129, 0.20);
   }
 
   .dark {
-    --background: 224 71% 4%;
-    --foreground: 210 40% 98%;
-    --card: 224 71% 6%;
-    --card-foreground: 210 40% 98%;
-    --popover: 224 71% 6%;
-    --popover-foreground: 210 40% 98%;
-    --primary: 217.2 91.2% 59.8%;
-    --primary-foreground: 222.2 47.4% 11.2%;
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 224.3 76.3% 48%;
+    --background: 150 4% 5.5%;
+    --foreground: 45 15% 96%;
+    --card: 150 4% 10.5%;
+    --card-foreground: 45 15% 96%;
+    --popover: 150 4% 13%;
+    --popover-foreground: 45 15% 96%;
+    --primary: 36 82% 52%;
+    --primary-foreground: 45 15% 98%;
+    --secondary: 150 4% 16%;
+    --secondary-foreground: 45 15% 96%;
+    --muted: 150 4% 14%;
+    --muted-foreground: 45 8% 65%;
+    --accent: 150 4% 18%;
+    --accent-foreground: 45 15% 96%;
+    --destructive: 8 76% 54%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 45 8% 18%;
+    --input: 45 8% 18%;
+    --ring: 36 82% 52%;
   }
 }
 
@@ -55,5 +85,244 @@
   }
   body {
     @apply bg-background text-foreground;
+    /* Use Plus Jakarta Sans for premium enterprise feel */
+    font-family: 'Plus Jakarta Sans', var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+    font-feature-settings: "rlig" 1, "calt" 1;
   }
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Plus Jakarta Sans', var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+    font-feature-settings: "rlig" 1, "calt" 1;
+    letter-spacing: -0.015em;
+  }
+}
+
+/* Glassmorphism, Micro-borders & Tactile Mineral Surfaces */
+.glass-panel {
+  background: rgba(26, 29, 28, 0.78);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(230, 225, 215, 0.08);
+}
+
+.dark .glass-panel {
+  background: rgba(26, 29, 28, 0.88);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(230, 225, 215, 0.08);
+}
+
+.card-elevated {
+  background: hsl(var(--card));
+  border: 1px solid rgba(230, 225, 215, 0.08);
+  box-shadow: 0 4px 12px 0 rgba(0, 0, 0, 0.5), 0 1px 3px 0 rgba(0, 0, 0, 0.3);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.card-elevated:hover {
+  border-color: rgba(230, 145, 36, 0.4);
+  box-shadow: 0 12px 28px -4px rgba(0, 0, 0, 0.6), 0 0 28px rgba(230, 145, 36, 0.16);
+  transform: translateY(-2px);
+}
+
+.subtle-grid {
+  background-size: 32px 32px;
+  background-image: linear-gradient(to right, rgba(230, 225, 215, 0.035) 1px, transparent 1px),
+                    linear-gradient(to bottom, rgba(230, 225, 215, 0.035) 1px, transparent 1px);
+}
+
+.dark .subtle-grid {
+  background-image: linear-gradient(to right, rgba(230, 225, 215, 0.035) 1px, transparent 1px),
+                    linear-gradient(to bottom, rgba(230, 225, 215, 0.035) 1px, transparent 1px);
+}
+
+/* Smooth custom scrollbars for high-density tables */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.4);
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(100, 116, 139, 0.6);
+}
+
+/* Respect user's reduced-motion preference across the entire app */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   PREMIUM ENTERPRISE UTILITY CLASSES
+   ═══════════════════════════════════════════════════════════════ */
+
+/* Aurora gradient hero background */
+.aurora-bg {
+  position: relative;
+  overflow: hidden;
+}
+.aurora-bg::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: 
+    radial-gradient(ellipse 80% 60% at 10% 20%, rgba(37,99,235,0.14) 0%, transparent 60%),
+    radial-gradient(ellipse 60% 50% at 80% 10%, rgba(99,102,241,0.10) 0%, transparent 55%),
+    radial-gradient(ellipse 50% 70% at 90% 80%, rgba(16,185,129,0.07) 0%, transparent 50%);
+  pointer-events: none;
+  z-index: 0;
+  animation: aurora-shift 12s ease-in-out infinite alternate;
+}
+.dark .aurora-bg::before {
+  background: 
+    radial-gradient(ellipse 80% 60% at 10% 20%, rgba(96,165,250,0.12) 0%, transparent 60%),
+    radial-gradient(ellipse 60% 50% at 80% 10%, rgba(129,140,248,0.10) 0%, transparent 55%),
+    radial-gradient(ellipse 50% 70% at 90% 80%, rgba(52,211,153,0.07) 0%, transparent 50%);
+}
+@keyframes aurora-shift {
+  0%   { transform: translate(0, 0) scale(1); }
+  33%  { transform: translate(2%, -1%) scale(1.02); }
+  66%  { transform: translate(-1%, 1.5%) scale(0.99); }
+  100% { transform: translate(1%, -0.5%) scale(1.01); }
+}
+
+/* Premium card with lift on hover */
+.card-lift {
+  transition: transform 0.22s cubic-bezier(0.16,1,0.3,1),
+              box-shadow 0.22s cubic-bezier(0.16,1,0.3,1),
+              border-color 0.18s ease;
+}
+.card-lift:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(15,23,42,0.10), 0 2px 8px rgba(15,23,42,0.06);
+}
+
+/* Dot-mesh background for section accents */
+.dot-mesh {
+  background-image: radial-gradient(circle, rgba(230, 145, 36, 0.08) 1px, transparent 1px);
+  background-size: 20px 20px;
+}
+.dark .dot-mesh {
+  background-image: radial-gradient(circle, rgba(230, 145, 36, 0.08) 1px, transparent 1px);
+}
+
+/* Glowing ring on focus-visible for accessibility */
+*:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+  border-radius: calc(var(--radius) - 1px);
+}
+
+/* Stat number counter — large display numerals */
+.stat-display {
+  font-family: 'Plus Jakarta Sans', var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.03em;
+}
+
+/* Premium nav active indicator */
+.nav-active-pill {
+  position: relative;
+}
+.nav-active-pill::after {
+  content: '';
+  position: absolute;
+  bottom: -4px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 16px;
+  height: 2px;
+  border-radius: 9999px;
+  background: hsl(var(--primary));
+}
+
+/* Subtle section divider */
+.section-divider {
+  border: none;
+  height: 1px;
+  background: linear-gradient(to right, transparent, hsl(var(--border)), transparent);
+}
+
+/* Gradient text for hero accents — Anodized Warm Bronze */
+.text-gradient-primary {
+  background: linear-gradient(135deg, #E69124 0%, #F59E0B 50%, #D97706 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Badge pulse animation for live indicators */
+.badge-pulse {
+  animation: badge-pulse 2.4s ease-in-out infinite;
+}
+@keyframes badge-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.65; }
+}
+
+/* Stagger fade-in animation for list rows */
+@keyframes row-fade-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.row-enter {
+  animation: row-fade-in 0.3s ease both;
+}
+
+/* Page transition wrapper */
+@keyframes page-enter {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.page-animate {
+  animation: page-enter 0.35s cubic-bezier(0.16,1,0.3,1) both;
+}
+
+/* Premium shimmer sweep for skeleton states */
+@keyframes shimmer-sweep {
+  0%   { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+.skeleton-shimmer {
+  background: linear-gradient(
+    90deg,
+    hsl(var(--muted)) 25%,
+    hsl(var(--accent)) 50%,
+    hsl(var(--muted)) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer-sweep 1.6s linear infinite;
+}
+
+/* ── Vanta hero overlay — richer depth layering ── */
+.vanta-overlay-dark {
+  background: linear-gradient(
+    135deg,
+    rgba(10,15,38,0.72) 0%,
+    rgba(10,15,38,0.45) 50%,
+    rgba(10,15,38,0.20) 100%
+  );
+}
+.vanta-overlay-light {
+  background: linear-gradient(
+    135deg,
+    rgba(241,245,249,0.78) 0%,
+    rgba(241,245,249,0.50) 50%,
+    rgba(241,245,249,0.22) 100%
+  );
 }

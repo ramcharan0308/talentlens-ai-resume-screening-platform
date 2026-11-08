@@ -1,9 +1,55 @@
-import { PrismaClient, OrganizationType, UserRole, RequisitionStatus } from "@prisma/client";
+import { PrismaClient, OrganizationType, UserRole, RequisitionStatus, ApplicationStatus } from "@prisma/client";
+import bcrypt from "bcryptjs";
 
 const prisma = new PrismaClient();
 
 async function main() {
   console.log("Seeding TalentLens database...");
+
+  // 1. Pre-flight Demo Account Check
+  const demoUsersConfig = [
+    {
+      email: "priya.sharma@companya-noida.internal",
+      name: "Priya Sharma",
+      role: UserRole.RECRUITER,
+      organizationId: "00000000-0000-0000-0000-000000000001",
+    },
+    {
+      email: "ananya.roy@companya-noida.internal",
+      name: "Ananya Roy",
+      role: UserRole.DELIVERY_HEAD,
+      organizationId: "00000000-0000-0000-0000-000000000001",
+    },
+    {
+      email: "rajesh.kumar@fintechglobal.com",
+      name: "Rajesh Kumar",
+      role: UserRole.CLIENT_HIRING_MGR,
+      organizationId: "00000000-0000-0000-0000-000000000002",
+    },
+  ];
+
+  const explicitResetRequested = process.env.RESET_DEMO_PASSWORDS === "true";
+  const existingUsers = await prisma.user.findMany({
+    where: { email: { in: demoUsersConfig.map((u) => u.email) } },
+  });
+
+  const existingEmailSet = new Set(
+    existingUsers.filter((u) => u.passwordHash !== null).map((u) => u.email)
+  );
+  const uninitializedUsers = demoUsersConfig.filter((u) => !existingEmailSet.has(u.email));
+  const requiresPasswordHash = uninitializedUsers.length > 0 || explicitResetRequested;
+
+  let newPasswordHash: string | undefined = undefined;
+
+  if (requiresPasswordHash) {
+    const rawDemoPassword = process.env.DEMO_USER_PASSWORD;
+    if (!rawDemoPassword || rawDemoPassword.trim().length === 0) {
+      throw new Error(
+        "DEMO_USER_PASSWORD environment variable is required to create demo user accounts. Pre-flight check failed before modifying database records."
+      );
+    }
+    newPasswordHash = await bcrypt.hash(rawDemoPassword, 12);
+  }
 
   // 1. Agency Organization
   const agency = await prisma.organization.upsert({
@@ -19,47 +65,74 @@ async function main() {
   // 2. Client Organization
   const clientOrg = await prisma.organization.upsert({
     where: { id: "00000000-0000-0000-0000-000000000002" },
-    update: {},
+    update: {
+      agencyId: agency.id,
+    },
     create: {
       id: "00000000-0000-0000-0000-000000000002",
       name: "FinTech Global Technologies",
       type: OrganizationType.CLIENT,
+      agencyId: agency.id,
     },
   });
 
-  // 3. Recruiter User
+  // 3. Recruiter User (Preserve existing password unless explicit reset requested)
   const recruiter = await prisma.user.upsert({
     where: { email: "priya.sharma@companya-noida.internal" },
-    update: {},
+    update: {
+      name: "Priya Sharma",
+      role: UserRole.RECRUITER,
+      organizationId: agency.id,
+      isActive: true,
+      ...(explicitResetRequested && newPasswordHash ? { passwordHash: newPasswordHash } : {}),
+    },
     create: {
       name: "Priya Sharma",
       email: "priya.sharma@companya-noida.internal",
+      passwordHash: newPasswordHash || null,
       role: UserRole.RECRUITER,
       organizationId: agency.id,
+      isActive: true,
     },
   });
 
   // 4. Delivery Head User
   await prisma.user.upsert({
     where: { email: "ananya.roy@companya-noida.internal" },
-    update: {},
+    update: {
+      name: "Ananya Roy",
+      role: UserRole.DELIVERY_HEAD,
+      organizationId: agency.id,
+      isActive: true,
+      ...(explicitResetRequested && newPasswordHash ? { passwordHash: newPasswordHash } : {}),
+    },
     create: {
       name: "Ananya Roy",
       email: "ananya.roy@companya-noida.internal",
+      passwordHash: newPasswordHash || null,
       role: UserRole.DELIVERY_HEAD,
       organizationId: agency.id,
+      isActive: true,
     },
   });
 
   // 5. Client Hiring Manager
   await prisma.user.upsert({
     where: { email: "rajesh.kumar@fintechglobal.com" },
-    update: {},
+    update: {
+      name: "Rajesh Kumar",
+      role: UserRole.CLIENT_HIRING_MGR,
+      organizationId: clientOrg.id,
+      isActive: true,
+      ...(explicitResetRequested && newPasswordHash ? { passwordHash: newPasswordHash } : {}),
+    },
     create: {
       name: "Rajesh Kumar",
       email: "rajesh.kumar@fintechglobal.com",
+      passwordHash: newPasswordHash || null,
       role: UserRole.CLIENT_HIRING_MGR,
       organizationId: clientOrg.id,
+      isActive: true,
     },
   });
 
@@ -69,6 +142,13 @@ async function main() {
   });
 
   let benchmarkId = existingBenchmark?.id;
+
+  if (existingBenchmark && !existingBenchmark.clientOrganizationId) {
+    await prisma.requisition.update({
+      where: { id: existingBenchmark.id },
+      data: { clientOrganizationId: clientOrg.id },
+    });
+  }
 
   if (!existingBenchmark) {
     const createdBenchmark = await prisma.requisition.create({
@@ -91,6 +171,7 @@ Key Responsibilities:
 • Participate in Agile sprints, peer code reviews, and production troubleshooting.`,
         status: RequisitionStatus.ACTIVE,
         organizationId: agency.id,
+        clientOrganizationId: clientOrg.id,
         createdById: recruiter.id,
         scorecardCriteria: {
           create: [
@@ -268,7 +349,79 @@ Requires deep modern React 19 architecture, Server Components, TypeScript strict
     });
   }
 
-  console.log("Database seeded successfully with benchmark data!");
+  // 9. Benchmark Candidate Fixtures (Idempotent)
+  const candidateFixtures = [
+    {
+      candidateReference: "CND-91022",
+      fullName: "Ritika Bansal",
+      currentRole: "Senior Java Developer",
+      experienceYears: 6.5,
+      keySkills: ["Java", "Spring Boot", "microservices"],
+      noticeDays: 60,
+      linkToBenchmark: true,
+    },
+    {
+      candidateReference: "CND-91047",
+      fullName: "Arjun Rawat",
+      currentRole: "KYC Analyst",
+      experienceYears: 3.0,
+      keySkills: ["KYC", "AML checks", "Excel"],
+      noticeDays: 30,
+      linkToBenchmark: false, // Invariant: Do not link Arjun to Senior Java Developer requisition
+    },
+    {
+      candidateReference: "CND-91088",
+      fullName: "Pooja Nair",
+      currentRole: "Java Developer",
+      experienceYears: 4.0,
+      keySkills: ["Java", "Hibernate", "REST APIs"],
+      noticeDays: 90,
+      linkToBenchmark: true,
+    },
+  ];
+
+  for (const fixture of candidateFixtures) {
+    const candidate = await prisma.candidate.upsert({
+      where: { candidateReference: fixture.candidateReference },
+      update: {
+        fullName: fixture.fullName,
+        currentRole: fixture.currentRole,
+        experienceYears: fixture.experienceYears,
+        keySkills: fixture.keySkills,
+        noticeDays: fixture.noticeDays,
+        isFixture: true,
+      },
+      create: {
+        candidateReference: fixture.candidateReference,
+        agencyId: agency.id,
+        fullName: fixture.fullName,
+        currentRole: fixture.currentRole,
+        experienceYears: fixture.experienceYears,
+        keySkills: fixture.keySkills,
+        noticeDays: fixture.noticeDays,
+        isFixture: true,
+      },
+    });
+
+    if (fixture.linkToBenchmark && benchmarkId) {
+      await prisma.application.upsert({
+        where: {
+          candidateId_requisitionId: {
+            candidateId: candidate.id,
+            requisitionId: benchmarkId,
+          },
+        },
+        update: {},
+        create: {
+          candidateId: candidate.id,
+          requisitionId: benchmarkId,
+          status: ApplicationStatus.SOURCED,
+        },
+      });
+    }
+  }
+
+  console.log("Database seeded successfully with benchmark data and candidate fixtures!");
 }
 
 main()
@@ -279,3 +432,4 @@ main()
   .finally(async () => {
     await prisma.$disconnect();
   });
+
