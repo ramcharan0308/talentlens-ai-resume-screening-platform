@@ -68,6 +68,9 @@ enum ApplicationStatus {
   CLIENT_SHORTLISTED
   CLIENT_REJECTED
   INTERVIEW_PROPOSED
+  INTERVIEW_SCHEDULED
+  INTERVIEW_COMPLETED
+  OFFERED
   JOINED
   REJECTED
 }
@@ -78,10 +81,31 @@ enum ConsentStatus {
   WITHDRAWN
 }
 
+enum DeletionRequestStatus {
+  REQUESTED
+  UNDER_REVIEW
+  APPROVED
+  PROCESSING
+  COMPLETED
+  REJECTED
+}
+
 enum ConsentEvidenceType {
   PORTAL_AUTH_SESSION
   SIGNED_DOCUMENT
   EMAIL_CONFIRMATION
+}
+
+enum EvaluationStatus {
+  PENDING
+  COMPLETED
+  FAILED
+}
+
+enum EvidenceStatus {
+  SUPPORTED
+  PARTIAL
+  INSUFFICIENT
 }
 
 // ----------------------------------------------------
@@ -102,8 +126,19 @@ model Organization {
   consents     ConsentRecord[]  @relation("AgencyConsents")
   batchJobs    BatchUploadJob[] @relation("AgencyBatchJobs")
   auditLogs    AuditLog[]
+  evaluations  Evaluation[]     @relation("AgencyEvaluations")
+  clientRequisitions Requisition[] @relation("ClientRequisitions")
+  clientApplications Application[] @relation("ClientApplications")
+  deletionRequests   CandidateDeletionRequest[] @relation("AgencyDeletionRequests")
+  retentionPolicies  RetentionPolicy[] @relation("AgencyRetentionPolicies")
+
+  // Managing agency relationship for client organizations (type == CLIENT)
+  agencyId            String?
+  agency              Organization?    @relation("AgencyClientOrganizations", fields: [agencyId], references: [id], onDelete: Restrict)
+  clientOrganizations Organization[]  @relation("AgencyClientOrganizations")
 
   @@index([type])
+  @@index([agencyId])
 }
 
 model User {
@@ -112,6 +147,7 @@ model User {
   email          String       @unique
   passwordHash   String?      // Auth-related field for credential / hashed password management
   role           UserRole
+  isActive       Boolean      @default(true)
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   createdAt      DateTime     @default(now())
@@ -119,10 +155,45 @@ model User {
 
   requisitionsCreated Requisition[]   @relation("RequisitionCreator")
   verifiedConsents    ConsentRecord[] @relation("ConsentVerifier")
+  recordedConsents    ConsentRecord[] @relation("ConsentRecorder")
+  withdrawnConsents   ConsentRecord[] @relation("ConsentWithdrawer")
+  consentHistories    ConsentHistory[] @relation("ConsentHistoryActor")
   auditLogs           AuditLog[]      @relation("ActorAuditLogs")
+  sessions            Session[]
+  reviewedEvaluations Evaluation[]    @relation("EvaluationReviewer")
+  submittedApplications Application[] @relation("ApplicationSubmitter")
+  clientDecisionsMade   Application[] @relation("ApplicationClientDecisionMaker")
+  requestedDeletions  CandidateDeletionRequest[] @relation("DeletionRequester")
+  reviewedDeletions   CandidateDeletionRequest[] @relation("DeletionReviewer")
+  approvedDeletions   CandidateDeletionRequest[] @relation("DeletionApprover")
+  executedDeletions   CandidateDeletionRequest[] @relation("DeletionExecutor")
+  retentionPoliciesCreated RetentionPolicy[]     @relation("RetentionPolicyCreator")
 
   @@index([organizationId, role])
   @@index([email])
+}
+
+model Session {
+  id           String   @id @default(uuid())
+  sessionToken String   @unique
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([userId])
+  @@index([sessionToken])
+}
+
+model LoginAttempt {
+  id        String   @id @default(uuid())
+  ip        String
+  email     String
+  createdAt DateTime @default(now())
+
+  @@index([ip, createdAt])
+  @@index([email, createdAt])
 }
 
 model Requisition {
@@ -139,6 +210,8 @@ model Requisition {
   status             RequisitionStatus    @default(DRAFT)
   organizationId     String
   organization       Organization         @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  clientOrganizationId String?
+  clientOrganization Organization?        @relation("ClientRequisitions", fields: [clientOrganizationId], references: [id], onDelete: SetNull)
   createdById        String
   createdBy          User                 @relation("RequisitionCreator", fields: [createdById], references: [id], onDelete: Restrict)
   createdAt          DateTime             @default(now())
@@ -147,8 +220,11 @@ model Requisition {
   scorecardCriteria  ScorecardCriterion[]
   applications       Application[]
   batchJobs          BatchUploadJob[]
+  evaluations        Evaluation[]        @relation("RequisitionEvaluations")
+  scorecardSnapshots ScorecardSnapshot[]
 
   @@index([organizationId, status])
+  @@index([clientOrganizationId])
   @@index([createdById])
 }
 
@@ -176,19 +252,31 @@ model Candidate {
   candidateReference String               @unique // Pseudonymous identifier (e.g. CND-XXXXX)
   agencyId           String               // Explicit agency ownership invariant (must be type AGENCY)
   agency             Organization         @relation("AgencyCandidates", fields: [agencyId], references: [id], onDelete: Restrict)
+  fullName           String?              // Recruiter-accessible full name (masked in client view)
+  currentRole        String?              // Extracted or benchmark current role
+  experienceYears    Float?               // Extracted total relevant experience in years
+  keySkills          String[]             @default([])
+  noticeDays         Int?                 // Stated notice period in days
+  isFixture          Boolean              @default(false) // Flag separating demo fixtures from ingested CVs
   purgeStatus        CandidatePurgeStatus @default(ACTIVE)
   purgeRequestedAt   DateTime?
   purgedAt           DateTime?
+  retentionExpiresAt DateTime?
   createdAt          DateTime             @default(now())
   updatedAt          DateTime             @updatedAt
 
   applications      Application[]
   uploadedDocuments UploadedDocument[]
   consentRecords    ConsentRecord[]
+  consentHistories  ConsentHistory[]
+  evaluations       Evaluation[]         @relation("CandidateEvaluations")
+  deletionRequests  CandidateDeletionRequest[]
 
   @@index([agencyId])
   @@index([candidateReference])
   @@index([purgeStatus])
+  @@index([agencyId, isFixture])
+  @@index([agencyId, retentionExpiresAt])
 }
 
 model UploadedDocument {
@@ -200,6 +288,7 @@ model UploadedDocument {
   fileName          String
   fileType          String
   storageKey        String
+  fileSizeBytes     Int?
   fileHash          String                   // SHA-256 binary hash
   processingStatus  DocumentProcessingStatus @default(PENDING)
   extractedText     String?                  @db.Text
@@ -211,6 +300,7 @@ model UploadedDocument {
   updatedAt         DateTime                 @updatedAt
 
   batchItems        BatchFileItem[]
+  evaluations       Evaluation[]
 
   // Deduplication Invariant: Documents are unique per agency (not globally),
   // preventing cross-tenant collisions and allowing reusable multi-requisition submissions.
@@ -276,32 +366,159 @@ model Application {
   requisitionId String
   requisition   Requisition       @relation(fields: [requisitionId], references: [id], onDelete: Restrict)
   status        ApplicationStatus @default(SOURCED)
+
+  // Recruiter submission tracking
+  submittedAt             DateTime?
+  submittedById           String?
+  submittedBy             User?             @relation("ApplicationSubmitter", fields: [submittedById], references: [id], onDelete: SetNull)
+  clientOrganizationId    String?
+  clientOrganization      Organization?     @relation("ClientApplications", fields: [clientOrganizationId], references: [id], onDelete: SetNull)
+
+  // Client decision & interview proposal
+  clientDecisionAt        DateTime?
+  clientDecisionById      String?
+  clientDecisionBy        User?             @relation("ApplicationClientDecisionMaker", fields: [clientDecisionById], references: [id], onDelete: SetNull)
+  clientRejectionReason   String?           @db.Text
+  proposedInterviewSlot   DateTime?
+  proposedInterviewNote   String?           @db.Text
+
+  // Pipeline progression tracking
+  interviewScheduledSlot  DateTime?
+  interviewScheduledNote  String?           @db.Text
+  offeredAt               DateTime?
+  joinedAt                DateTime?
+  rejectedAt              DateTime?
+  rejectionReason         String?           @db.Text
+
   createdAt     DateTime          @default(now())
   updatedAt     DateTime          @updatedAt
+
+  evaluations   Evaluation[]      @relation("ApplicationEvaluations")
 
   @@unique([candidateId, requisitionId]) // One application per candidate per requisition
   @@index([requisitionId, status])
   @@index([candidateId])
+  @@index([clientOrganizationId, status])
 }
 
 model ConsentRecord {
   id                String              @id @default(uuid())
   candidateId       String
-  candidate         Candidate           @relation(fields: [candidateId], references: [id], onDelete: Restrict)
+  candidate         Candidate           @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  candidateReference String?            // Traceable reference (e.g. CND-XXXXX)
   agencyId          String
   agency            Organization        @relation("AgencyConsents", fields: [agencyId], references: [id], onDelete: Restrict)
-  purpose           String              // Agency-scoped consent purpose (e.g. "RECRUITMENT_EVALUATION")
+  purpose           String              // e.g. "RECRUITMENT_PROCESSING", "TALENT_POOL_FUTURE_ROLES", "THIRD_PARTY_SHARING"
   status            ConsentStatus       @default(PENDING_VERIFICATION)
   evidenceType      ConsentEvidenceType
   evidenceReference String              // Storage key, session token, or email confirmation reference
+  noticeVersion     String              @default("v1.0")
+  source            String              @default("DIRECT_APPLICATION")
+  legalBasis        String?             @default("CONSENT")
+  notes             String?             @db.Text
+
+  recordedById      String?
+  recordedBy        User?               @relation("ConsentRecorder", fields: [recordedById], references: [id], onDelete: SetNull)
   verifiedById      String?
   verifiedBy        User?               @relation("ConsentVerifier", fields: [verifiedById], references: [id], onDelete: SetNull)
   verifiedAt        DateTime?
+
   withdrawnAt       DateTime?
+  withdrawalReason  String?             @db.Text
+  withdrawnById     String?
+  withdrawnBy       User?               @relation("ConsentWithdrawer", fields: [withdrawnById], references: [id], onDelete: SetNull)
+
   createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @default(now()) @updatedAt
+
+  history           ConsentHistory[]
 
   @@index([candidateId, agencyId, status])
+  @@index([candidateReference])
   @@index([verifiedById])
+  @@index([recordedById])
+  @@index([withdrawnById])
+}
+
+model ConsentHistory {
+  id                 String        @id @default(uuid())
+  consentRecordId    String
+  consentRecord      ConsentRecord @relation(fields: [consentRecordId], references: [id], onDelete: Cascade)
+  candidateId        String?
+  candidate          Candidate?    @relation(fields: [candidateId], references: [id], onDelete: SetNull)
+  candidateReference String?
+  agencyId           String
+  action             String        // "GRANTED", "VERIFIED", "WITHDRAWN", "MODIFIED"
+  status             ConsentStatus
+  purpose            String
+  noticeVersion      String
+  source             String
+  legalBasis         String?
+  actorId            String?
+  actor              User?         @relation("ConsentHistoryActor", fields: [actorId], references: [id], onDelete: SetNull)
+  notes              String?       @db.Text
+  createdAt          DateTime      @default(now())
+
+  @@index([consentRecordId])
+  @@index([candidateId])
+  @@index([agencyId])
+  @@index([candidateReference])
+}
+
+model CandidateDeletionRequest {
+  id                   String                @id @default(uuid())
+  agencyId             String
+  agency               Organization          @relation("AgencyDeletionRequests", fields: [agencyId], references: [id], onDelete: Restrict)
+  candidateId          String?
+  candidate            Candidate?            @relation(fields: [candidateId], references: [id], onDelete: SetNull)
+  candidateReference   String                // Preserved even after candidate row is deleted
+  candidateName        String?               // Stored for recruiter display prior to execution; scrubbed on completion
+  status               DeletionRequestStatus @default(REQUESTED)
+  reason               String                @db.Text
+  rejectionReason      String?               @db.Text
+
+  requestedById        String
+  requestedBy          User                  @relation("DeletionRequester", fields: [requestedById], references: [id], onDelete: Restrict)
+  reviewedById         String?
+  reviewedBy           User?                 @relation("DeletionReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+  reviewedAt           DateTime?
+  approvedById         String?
+  approvedBy           User?                 @relation("DeletionApprover", fields: [approvedById], references: [id], onDelete: SetNull)
+  approvedAt           DateTime?
+  executedById         String?
+  executedBy           User?                 @relation("DeletionExecutor", fields: [executedById], references: [id], onDelete: SetNull)
+  executedAt           DateTime?
+  completedAt          DateTime?
+
+  storageCleanupStatus String?               // PENDING, COMPLETED, FAILED
+  failureReason        String?               @db.Text
+  deletedFilesCount    Int                   @default(0)
+  totalFilesCount      Int                   @default(0)
+  metadata             Json?
+
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
+
+  @@index([agencyId, status])
+  @@index([candidateId])
+  @@index([candidateReference])
+}
+
+model RetentionPolicy {
+  id            String       @id @default(uuid())
+  agencyId      String
+  agency        Organization @relation("AgencyRetentionPolicies", fields: [agencyId], references: [id], onDelete: Restrict)
+  name          String
+  description   String?      @db.Text
+  retentionDays Int          @default(365) // e.g. 365, 730
+  purpose       String       @default("RECRUITMENT_PROCESSING")
+  isActive      Boolean      @default(true)
+  createdById   String?
+  createdBy     User?        @relation("RetentionPolicyCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  @@index([agencyId, isActive])
 }
 
 // ----------------------------------------------------
@@ -329,4 +546,83 @@ model AuditLog {
   @@index([entityType, entityId])
   @@index([organizationId, createdAt])
   @@index([actorId])
+}
+
+// ----------------------------------------------------
+// AI Screening & Evidence Engine Models
+// ----------------------------------------------------
+
+model ScorecardSnapshot {
+  id            String       @id @default(uuid())
+  requisitionId String
+  requisition   Requisition  @relation(fields: [requisitionId], references: [id], onDelete: Cascade)
+  criteria      Json         // Immutable snapshot of criteria array: [{ id, name, description, weight, isMustHave, minScore, maxScore, guidelines }]
+  createdAt     DateTime     @default(now())
+
+  evaluations   Evaluation[]
+
+  @@index([requisitionId])
+}
+
+model Evaluation {
+  id                    String                   @id @default(uuid())
+  agencyId              String                   // Multi-tenant isolation invariant: evaluation belongs to specific agency
+  agency                Organization             @relation("AgencyEvaluations", fields: [agencyId], references: [id], onDelete: Restrict)
+  requisitionId         String
+  requisition           Requisition              @relation("RequisitionEvaluations", fields: [requisitionId], references: [id], onDelete: Cascade)
+  candidateId           String
+  candidate             Candidate                @relation("CandidateEvaluations", fields: [candidateId], references: [id], onDelete: Restrict)
+  applicationId         String?
+  application           Application?             @relation("ApplicationEvaluations", fields: [applicationId], references: [id], onDelete: SetNull)
+  documentId            String?
+  document              UploadedDocument?        @relation(fields: [documentId], references: [id], onDelete: SetNull)
+  scorecardSnapshotId   String?
+  scorecardSnapshot     ScorecardSnapshot?       @relation(fields: [scorecardSnapshotId], references: [id], onDelete: SetNull)
+  status                EvaluationStatus         @default(PENDING)
+  overallScore          Float?                   // Deterministic weighted score (0-100)
+  evidenceCoverage      Float?                   // Percentage of criteria with SUPPORTED/PARTIAL coverage (0-100)
+  supportedCount        Int                      @default(0)
+  partialCount          Int                      @default(0)
+  insufficientCount     Int                      @default(0)
+  hasMustHaveWarnings   Boolean                  @default(false)
+  mustHaveWarnings      String[]                 @default([])
+  redactedContent       String?                  @db.Text // Sanitized resume sent to LLM (PII-free)
+  provider              String                   // e.g. "openai", "mock"
+  modelId               String                   // e.g. "gpt-4o", "mock-screening-v1"
+  promptVersion         String                   // e.g. "v1.0"
+  errorMessage          String?                  @db.Text
+  isReviewedByRecruiter Boolean                  @default(false)
+  reviewedAt            DateTime?
+  reviewedById          String?
+  reviewedBy            User?                    @relation("EvaluationReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+  createdAt             DateTime                 @default(now())
+  updatedAt             DateTime                 @updatedAt
+
+  criterionScores       EvaluationCriterionScore[]
+
+  @@index([agencyId])
+  @@index([requisitionId])
+  @@index([candidateId])
+  @@index([requisitionId, overallScore])
+  @@index([requisitionId, status])
+  @@index([isReviewedByRecruiter])
+}
+
+model EvaluationCriterionScore {
+  id            String         @id @default(uuid())
+  evaluationId  String
+  evaluation    Evaluation     @relation(fields: [evaluationId], references: [id], onDelete: Cascade)
+  criterionId   String?
+  criterionName String
+  weight        Float          // Requisition criterion weight percentage (e.g. 25.0)
+  isMustHave    Boolean        @default(false)
+  score         Float          // Rubric score (1-10)
+  status        EvidenceStatus @default(INSUFFICIENT)
+  explanation   String         @db.Text
+  quotes        Json           // Verified quotes array: [{ quote: string, startOffset: number, endOffset: number, verified: boolean }]
+  missingGaps   String[]       @default([])
+  createdAt     DateTime       @default(now())
+
+  @@index([evaluationId])
+  @@index([criterionName])
 }
