@@ -49,10 +49,24 @@ export async function verifyCredentials(
     return null;
   }
 
-  const user = await prisma.user.findUnique({
-    where: { email: normalizedEmail },
-    include: { organization: true },
-  });
+  let user = null;
+  try {
+    user = await prisma.user.findUnique({
+      where: { email: normalizedEmail },
+      include: { organization: true },
+    });
+  } catch (err: any) {
+    // Retry once after 1.5s in case serverless PostgreSQL (e.g. Neon) was waking from sleep
+    if (err?.code === "P1001" || err?.name === "PrismaClientInitializationError") {
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      user = await prisma.user.findUnique({
+        where: { email: normalizedEmail },
+        include: { organization: true },
+      });
+    } else {
+      throw err;
+    }
+  }
 
   if (!user || !user.passwordHash || !user.isActive) {
     // Run dummy comparison to equalize execution time and prevent enumeration
@@ -85,13 +99,28 @@ export async function createSession(userId: string): Promise<{ sessionToken: str
   const sessionToken = crypto.randomBytes(32).toString("base64url");
   const expiresAt = new Date(Date.now() + SESSION_DURATION_MS);
 
-  await prisma.session.create({
-    data: {
-      sessionToken,
-      userId,
-      expiresAt,
-    },
-  });
+  try {
+    await prisma.session.create({
+      data: {
+        sessionToken,
+        userId,
+        expiresAt,
+      },
+    });
+  } catch (err: any) {
+    if (err?.code === "P1001" || err?.name === "PrismaClientInitializationError") {
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      await prisma.session.create({
+        data: {
+          sessionToken,
+          userId,
+          expiresAt,
+        },
+      });
+    } else {
+      throw err;
+    }
+  }
 
   return { sessionToken, expiresAt };
 }
@@ -105,14 +134,31 @@ export async function validateSession(sessionToken: string): Promise<Authenticat
     return null;
   }
 
-  const session = await prisma.session.findUnique({
-    where: { sessionToken },
-    include: {
-      user: {
-        include: { organization: true },
+  let session = null;
+  try {
+    session = await prisma.session.findUnique({
+      where: { sessionToken },
+      include: {
+        user: {
+          include: { organization: true },
+        },
       },
-    },
-  });
+    });
+  } catch (err: any) {
+    if (err?.code === "P1001" || err?.name === "PrismaClientInitializationError") {
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      session = await prisma.session.findUnique({
+        where: { sessionToken },
+        include: {
+          user: {
+            include: { organization: true },
+          },
+        },
+      });
+    } else {
+      throw err;
+    }
+  }
 
   if (!session) {
     return null;
@@ -310,55 +356,68 @@ export async function checkLoginRateLimit(
   ip: string,
   email: string
 ): Promise<{ isBlocked: boolean; retryAfterSeconds?: number }> {
-  const windowStart = new Date(Date.now() - LOGIN_RATE_LIMIT_WINDOW_MINUTES * 60 * 1000);
-  const normalizedEmail = email.trim().toLowerCase();
+  try {
+    const windowStart = new Date(Date.now() - LOGIN_RATE_LIMIT_WINDOW_MINUTES * 60 * 1000);
+    const normalizedEmail = email.trim().toLowerCase();
 
-  // Prune stale records (> 1 hour) asynchronously
-  prisma.loginAttempt.deleteMany({
-    where: { createdAt: { lt: new Date(Date.now() - 60 * 60 * 1000) } }
-  }).catch(() => {});
+    // Prune stale records (> 1 hour) asynchronously
+    prisma.loginAttempt.deleteMany({
+      where: { createdAt: { lt: new Date(Date.now() - 60 * 60 * 1000) } }
+    }).catch(() => {});
 
-  const [emailAttempts, ipAttempts] = await Promise.all([
-    prisma.loginAttempt.count({
-      where: {
-        email: normalizedEmail,
-        createdAt: { gt: windowStart },
-      },
-    }),
-    prisma.loginAttempt.count({
-      where: {
-        ip,
-        createdAt: { gt: windowStart },
-      },
-    }),
-  ]);
+    const [emailAttempts, ipAttempts] = await Promise.all([
+      prisma.loginAttempt.count({
+        where: {
+          email: normalizedEmail,
+          createdAt: { gt: windowStart },
+        },
+      }),
+      prisma.loginAttempt.count({
+        where: {
+          ip,
+          createdAt: { gt: windowStart },
+        },
+      }),
+    ]);
 
-  if (emailAttempts >= LOGIN_MAX_FAILED_ATTEMPTS_PER_EMAIL || ipAttempts >= LOGIN_MAX_FAILED_ATTEMPTS_PER_IP) {
-    return { isBlocked: true, retryAfterSeconds: LOGIN_RATE_LIMIT_WINDOW_MINUTES * 60 };
+    if (emailAttempts >= LOGIN_MAX_FAILED_ATTEMPTS_PER_EMAIL || ipAttempts >= LOGIN_MAX_FAILED_ATTEMPTS_PER_IP) {
+      return { isBlocked: true, retryAfterSeconds: LOGIN_RATE_LIMIT_WINDOW_MINUTES * 60 };
+    }
+
+    return { isBlocked: false };
+  } catch (err) {
+    console.warn("Rate limit check failed gracefully due to transient database connectivity:", err);
+    return { isBlocked: false };
   }
-
-  return { isBlocked: false };
 }
 
 /**
  * Records a failed login attempt in PostgreSQL.
  */
 export async function recordFailedLogin(ip: string, email: string): Promise<void> {
-  const normalizedEmail = email.trim().toLowerCase();
-  await prisma.loginAttempt.create({
-    data: {
-      ip,
-      email: normalizedEmail,
-    },
-  });
+  try {
+    const normalizedEmail = email.trim().toLowerCase();
+    await prisma.loginAttempt.create({
+      data: {
+        ip,
+        email: normalizedEmail,
+      },
+    });
+  } catch (err) {
+    console.warn("Failed to record failed login attempt:", err);
+  }
 }
 
 /**
  * Clears failed login attempts upon successful authentication.
  */
 export async function resetFailedLogins(email: string): Promise<void> {
-  const normalizedEmail = email.trim().toLowerCase();
-  await prisma.loginAttempt.deleteMany({
-    where: { email: normalizedEmail },
-  });
+  try {
+    const normalizedEmail = email.trim().toLowerCase();
+    await prisma.loginAttempt.deleteMany({
+      where: { email: normalizedEmail },
+    });
+  } catch (err) {
+    console.warn("Failed to reset login attempts:", err);
+  }
 }

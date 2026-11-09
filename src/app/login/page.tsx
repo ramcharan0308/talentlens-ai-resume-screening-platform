@@ -215,7 +215,9 @@ function LoginForm() {
                       Sign in to Your Workspace
                     </CardTitle>
                     <CardDescription className="text-xs text-muted-foreground">
-                      Enter credentials or select a verified test persona below.
+                      {isProduction
+                        ? "Enter your corporate credentials to access your workspace."
+                        : "Enter credentials or select a verified test persona below."}
                     </CardDescription>
                   </div>
                   <ShinyBadge variant="primary" size="sm">
@@ -357,6 +359,9 @@ function LoginForm() {
           <div className="text-center text-xs text-muted-foreground flex items-center justify-center gap-2 mt-4">
             <Shield className="h-3.5 w-3.5 text-emerald-500" />
             <span>Strict multi-tenant boundary, DPDP Section 12 &amp; SHA-256 session integrity</span>
+          </div>
+          <div className="text-center text-[11px] text-muted-foreground/80 mt-2">
+            Enterprise multi-tenant access: user accounts and client portals are provisioned by your system administrator.
           </div>
         </motion.div>
       </div>

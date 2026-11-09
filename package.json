@@ -10,6 +10,7 @@
     "lint": "eslint .",
     "test": "npx tsx --test --test-concurrency=1 tests/**/*.test.ts",
     "seed": "npx tsx prisma/seed.ts",
+    "user:provision": "npx tsx scripts/provision-user.ts",
     "prisma:generate": "prisma generate",
     "prisma:validate": "prisma validate"
   },

@@ -138,8 +138,22 @@ export async function POST(req: NextRequest) {
     });
 
     return attachSessionCookie(response, sessionToken, expiresAt);
-  } catch (error) {
+  } catch (error: any) {
     console.error("Login route error:", error);
+
+    if (
+      error?.code === "P1001" ||
+      error?.name === "PrismaClientInitializationError"
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Database compute is currently resuming from sleep. Please retry in a few moments.",
+        },
+        { status: 503 }
+      );
+    }
+
     return NextResponse.json(
       { success: false, error: "An unexpected error occurred during authentication." },
       { status: 500 }
