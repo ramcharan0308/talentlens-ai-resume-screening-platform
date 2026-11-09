@@ -123,7 +123,20 @@ The initial schema (`prisma/schema.prisma`) models the following core entities:
 
 ---
 
-## 6. Security & Privacy Notes
+## 7. AI Resume Screening Engine Configuration
+
+TalentLens features a pluggable, swappable AI screening provider architecture prioritizing zero-cost, high-speed inference via **Groq** on its free tier:
+
+* **Primary Provider (Groq)**: Uses Groq's OpenAI-compatible endpoint (`https://api.groq.com/openai/v1`) with free-tier model `llama-3.3-70b-versatile` (or `llama-3.1-8b-instant`). Requires `GROQ_API_KEY`.
+* **Fallback Provider (OpenAI)**: Supported via `OPENAI_API_KEY` with model `gpt-4o-mini`.
+* **Configurable Selection**: Controlled by the `SCREENING_PROVIDER` environment variable (`"groq"` or `"openai"`). If omitted, Groq is automatically prioritized when `GROQ_API_KEY` is present.
+* **Deterministic Weighted Scoring**: Deterministic 0-100 scoring based strictly on 100% weighted scorecard criteria.
+* **Verbatim Evidence Verification**: Bidirectional source-map tracking ensures quotations match resume text verbatim; hallucinated quotes are rejected.
+* **Human Safeguards**: AI evaluations never auto-reject candidates or auto-submit to clients.
+
+---
+
+## 8. Security & Privacy Notes
 
 * **No Secrets in Version Control**: `.env` is explicitly ignored in `.gitignore`. Only `.env.example` containing placeholder variable names is tracked.
 * **No Demographic Data for AI**: The database schema strictly excludes demographic variables (gender, age, marital status, religion, caste) to ensure compliance with anti-bias guidelines.

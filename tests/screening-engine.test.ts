@@ -277,11 +277,13 @@ test("Provider Safety: Production environment prohibits silent fallback to mock 
   const originalEnv = process.env.NODE_ENV;
   const originalProvider = process.env.SCREENING_PROVIDER;
   const originalKey = process.env.OPENAI_API_KEY;
+  const originalGroqKey = process.env.GROQ_API_KEY;
 
   try {
     (process.env as any).NODE_ENV = "production";
     delete process.env.SCREENING_PROVIDER;
     delete process.env.OPENAI_API_KEY;
+    delete process.env.GROQ_API_KEY;
 
     // Should NOT silently run mock provider in production; must throw AI_PROVIDER_NOT_CONFIGURED
     assert.throws(
@@ -298,6 +300,7 @@ test("Provider Safety: Production environment prohibits silent fallback to mock 
     (process.env as any).NODE_ENV = originalEnv;
     if (originalProvider) process.env.SCREENING_PROVIDER = originalProvider;
     if (originalKey) process.env.OPENAI_API_KEY = originalKey;
+    if (originalGroqKey) process.env.GROQ_API_KEY = originalGroqKey;
   }
 });
 
@@ -311,6 +314,19 @@ test("Provider Layer: Missing OPENAI_API_KEY throws AI_PROVIDER_NOT_CONFIGURED",
     );
   } finally {
     if (originalKey) process.env.OPENAI_API_KEY = originalKey;
+  }
+});
+
+test("Provider Layer: Missing GROQ_API_KEY throws AI_PROVIDER_NOT_CONFIGURED", () => {
+  const originalKey = process.env.GROQ_API_KEY;
+  try {
+    delete process.env.GROQ_API_KEY;
+    assert.throws(
+      () => getScreeningProvider("groq"),
+      (err: any) => err.message.includes("AI_PROVIDER_NOT_CONFIGURED") && err.message.includes("Groq")
+    );
+  } finally {
+    if (originalKey) process.env.GROQ_API_KEY = originalKey;
   }
 });
 

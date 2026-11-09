@@ -779,12 +779,14 @@ test("Milestone 4 Hardening: Production Mock Provider Safety — ALLOW_MOCK_IN_P
   const originalKey = process.env.OPENAI_API_KEY;
   const originalProvider = process.env.SCREENING_PROVIDER;
   const originalAllowMock = (process.env as any).ALLOW_MOCK_IN_PRODUCTION;
+  const originalGroqKey = process.env.GROQ_API_KEY;
 
   try {
     (process.env as any).NODE_ENV = "production";
     (process.env as any).ALLOW_MOCK_IN_PRODUCTION = "true";
     process.env.SCREENING_PROVIDER = "mock";
     delete process.env.OPENAI_API_KEY;
+    delete process.env.GROQ_API_KEY;
 
     // Must throw even if ALLOW_MOCK_IN_PRODUCTION="true"
     assert.throws(
@@ -803,6 +805,7 @@ test("Milestone 4 Hardening: Production Mock Provider Safety — ALLOW_MOCK_IN_P
   } finally {
     (process.env as any).NODE_ENV = originalEnv;
     if (originalKey) process.env.OPENAI_API_KEY = originalKey;
+    if (originalGroqKey) process.env.GROQ_API_KEY = originalGroqKey;
     if (originalProvider) process.env.SCREENING_PROVIDER = originalProvider;
     if (originalAllowMock) {
       (process.env as any).ALLOW_MOCK_IN_PRODUCTION = originalAllowMock;
