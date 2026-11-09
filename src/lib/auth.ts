@@ -1,4 +1,4 @@
-import { prisma } from "@/lib/prisma";
+import { prisma, withDatabaseRetry } from "@/lib/prisma";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import { UserRole, OrganizationType } from "@prisma/client";
@@ -51,21 +51,14 @@ export async function verifyCredentials(
 
   let user = null;
   try {
-    user = await prisma.user.findUnique({
-      where: { email: normalizedEmail },
-      include: { organization: true },
-    });
-  } catch (err: any) {
-    // Retry once after 1.5s in case serverless PostgreSQL (e.g. Neon) was waking from sleep
-    if (err?.code === "P1001" || err?.name === "PrismaClientInitializationError") {
-      await new Promise((resolve) => setTimeout(resolve, 1500));
-      user = await prisma.user.findUnique({
+    user = await withDatabaseRetry(() =>
+      prisma.user.findUnique({
         where: { email: normalizedEmail },
         include: { organization: true },
-      });
-    } else {
-      throw err;
-    }
+      })
+    );
+  } catch (err: any) {
+    throw err;
   }
 
   if (!user || !user.passwordHash || !user.isActive) {
@@ -99,28 +92,15 @@ export async function createSession(userId: string): Promise<{ sessionToken: str
   const sessionToken = crypto.randomBytes(32).toString("base64url");
   const expiresAt = new Date(Date.now() + SESSION_DURATION_MS);
 
-  try {
-    await prisma.session.create({
+  await withDatabaseRetry(() =>
+    prisma.session.create({
       data: {
         sessionToken,
         userId,
         expiresAt,
       },
-    });
-  } catch (err: any) {
-    if (err?.code === "P1001" || err?.name === "PrismaClientInitializationError") {
-      await new Promise((resolve) => setTimeout(resolve, 1500));
-      await prisma.session.create({
-        data: {
-          sessionToken,
-          userId,
-          expiresAt,
-        },
-      });
-    } else {
-      throw err;
-    }
-  }
+    })
+  );
 
   return { sessionToken, expiresAt };
 }
@@ -134,31 +114,16 @@ export async function validateSession(sessionToken: string): Promise<Authenticat
     return null;
   }
 
-  let session = null;
-  try {
-    session = await prisma.session.findUnique({
+  const session = await withDatabaseRetry(() =>
+    prisma.session.findUnique({
       where: { sessionToken },
       include: {
         user: {
           include: { organization: true },
         },
       },
-    });
-  } catch (err: any) {
-    if (err?.code === "P1001" || err?.name === "PrismaClientInitializationError") {
-      await new Promise((resolve) => setTimeout(resolve, 1500));
-      session = await prisma.session.findUnique({
-        where: { sessionToken },
-        include: {
-          user: {
-            include: { organization: true },
-          },
-        },
-      });
-    } else {
-      throw err;
-    }
-  }
+    })
+  );
 
   if (!session) {
     return null;
@@ -193,9 +158,11 @@ export async function validateSession(sessionToken: string): Promise<Authenticat
  */
 export async function invalidateSession(sessionToken: string): Promise<void> {
   if (!sessionToken) return;
-  await prisma.session.deleteMany({
-    where: { sessionToken },
-  });
+  await withDatabaseRetry(() =>
+    prisma.session.deleteMany({
+      where: { sessionToken },
+    })
+  ).catch((e) => console.warn("Failed to invalidate session:", e));
 }
 
 /**
@@ -203,9 +170,11 @@ export async function invalidateSession(sessionToken: string): Promise<void> {
  */
 export async function invalidateAllUserSessions(userId: string): Promise<void> {
   if (!userId) return;
-  await prisma.session.deleteMany({
-    where: { userId },
-  });
+  await withDatabaseRetry(() =>
+    prisma.session.deleteMany({
+      where: { userId },
+    })
+  ).catch((e) => console.warn("Failed to invalidate user sessions:", e));
 }
 
 /**

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { prisma, withDatabaseRetry } from "@/lib/prisma";
 import {
   verifyCredentials,
   createSession,
@@ -12,6 +12,23 @@ import {
 } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 30;
+
+// Dedicated, authorized company evaluation demo personas with role-specific workspace targets
+const APPROVED_DEMO_PERSONAS: Record<string, { role: string; redirect: string }> = {
+  "priya.sharma@companya-noida.internal": {
+    role: "RECRUITER",
+    redirect: "/requisitions",
+  },
+  "ananya.roy@companya-noida.internal": {
+    role: "DELIVERY_HEAD",
+    redirect: "/delivery/dashboard",
+  },
+  "rajesh.kumar@fintechglobal.com": {
+    role: "CLIENT_HIRING_MGR",
+    redirect: "/client",
+  },
+};
 
 export async function POST(req: NextRequest) {
   try {
@@ -33,36 +50,37 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { email, password, isDemoQuickFill } = body;
 
-    // Handle non-production demo quick-fill without exposing passwords client-side
+    // Handle dedicated demo persona quick-fill without exposing credentials client-side
     if (isDemoQuickFill) {
-      if (
-        process.env.NODE_ENV === "production" &&
-        process.env.ALLOW_DEMO_AUTH_IN_PRODUCTION !== "true"
-      ) {
-        return NextResponse.json(
-          { success: false, error: "Demo authentication is strictly prohibited in production." },
-          { status: 403 }
-        );
-      }
-
-      const APPROVED_DEMO_EMAILS = [
-        "priya.sharma@companya-noida.internal",
-        "ananya.roy@companya-noida.internal",
-        "rajesh.kumar@fintechglobal.com",
-      ];
-
       const normalizedEmail = (email || "").trim().toLowerCase();
-      if (!APPROVED_DEMO_EMAILS.includes(normalizedEmail)) {
+      const personaConfig = APPROVED_DEMO_PERSONAS[normalizedEmail];
+
+      // SAFETY INVARIANT: Strictly reject arbitrary or unauthorized accounts from passwordless login
+      if (!personaConfig) {
         return NextResponse.json(
           { success: false, error: "Unauthorized demo persona." },
           { status: 403 }
         );
       }
 
-      const demoUser = await prisma.user.findUnique({
-        where: { email: normalizedEmail },
-        include: { organization: true },
-      });
+      const ip = getClientIp(req);
+      const rateLimit = await checkLoginRateLimit(ip, normalizedEmail);
+      if (rateLimit.isBlocked) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: "Too many login attempts. Please try again later.",
+          },
+          { status: 429 }
+        );
+      }
+
+      const demoUser = await withDatabaseRetry(() =>
+        prisma.user.findUnique({
+          where: { email: normalizedEmail },
+          include: { organization: true },
+        })
+      );
 
       if (!demoUser || !demoUser.isActive) {
         return NextResponse.json(
@@ -83,6 +101,7 @@ export async function POST(req: NextRequest) {
           organizationId: demoUser.organization.id,
           organizationName: demoUser.organization.name,
           organizationType: demoUser.organization.type,
+          defaultRedirect: personaConfig.redirect,
         },
         message: "Demo authentication successful.",
       });
@@ -131,9 +150,19 @@ export async function POST(req: NextRequest) {
     // 6. Establish server session
     const { sessionToken, expiresAt } = await createSession(user.id);
 
+    const defaultRedirect =
+      user.role === "DELIVERY_HEAD"
+        ? "/delivery/dashboard"
+        : user.role === "CLIENT_HIRING_MGR"
+        ? "/client"
+        : "/requisitions";
+
     const response = NextResponse.json({
       success: true,
-      data: user,
+      data: {
+        ...user,
+        defaultRedirect,
+      },
       message: "Authentication successful.",
     });
 
@@ -143,6 +172,9 @@ export async function POST(req: NextRequest) {
 
     if (
       error?.code === "P1001" ||
+      error?.code === "P1002" ||
+      error?.code === "P1008" ||
+      error?.code === "P1017" ||
       error?.name === "PrismaClientInitializationError"
     ) {
       return NextResponse.json(

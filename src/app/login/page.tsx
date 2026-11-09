@@ -22,6 +22,7 @@ import {
   BarChart3,
   Check,
   Zap,
+  RefreshCw,
 } from "lucide-react";
 
 const cubicEase = [0.16, 1, 0.3, 1] as const;
@@ -29,12 +30,14 @@ const cubicEase = [0.16, 1, 0.3, 1] as const;
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const callbackUrl = searchParams?.get("callbackUrl") || "/requisitions";
+  const callbackUrl = searchParams?.get("callbackUrl");
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [activePersonaEmail, setActivePersonaEmail] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [isRetryingColdStart, setIsRetryingColdStart] = useState(false);
 
   const demoAccounts = [
     {
@@ -46,6 +49,7 @@ function LoginForm() {
       color: "bg-primary/10 text-primary border-primary/30",
       icon: <Users className="h-4 w-4 text-primary" />,
       description: "Screening Studio, Bulk CV Ingestion & Evaluation Review",
+      defaultRedirect: "/requisitions",
     },
     {
       label: "Delivery Head",
@@ -56,6 +60,7 @@ function LoginForm() {
       color: "bg-amber-500/10 text-amber-400 border-amber-500/30",
       icon: <BarChart3 className="h-4 w-4 text-amber-400" />,
       description: "Operational Analytics, SLA Compliance & Business Reporting",
+      defaultRedirect: "/delivery/dashboard",
     },
     {
       label: "Client Hiring Manager",
@@ -66,13 +71,13 @@ function LoginForm() {
       color: "bg-emerald-500/10 text-emerald-400 border-emerald-500/30",
       icon: <Building2 className="h-4 w-4 text-emerald-400" />,
       description: "Candidate Shortlisting, Masked PII & Decision Portal",
+      defaultRedirect: "/client",
     },
   ];
 
-  const isProduction = process.env.NODE_ENV === "production";
-
-  const handleQuickFill = async (demoEmail: string) => {
+  const handleQuickFill = async (demoEmail: string, retryCount = 0) => {
     setEmail(demoEmail);
+    setActivePersonaEmail(demoEmail);
     setError(null);
     setLoading(true);
 
@@ -85,22 +90,34 @@ function LoginForm() {
 
       const data = await res.json();
 
+      // Handle serverless database compute cold start automatically
+      if (res.status === 503 && retryCount < 2) {
+        setIsRetryingColdStart(true);
+        setError("Database compute is waking from sleep. Reconnecting automatically...");
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+        setIsRetryingColdStart(false);
+        return handleQuickFill(demoEmail, retryCount + 1);
+      }
+
       if (!res.ok || !data.success) {
         setError(data.error || "Demo authentication failed.");
         setLoading(false);
+        setActivePersonaEmail(null);
         return;
       }
 
-      router.push(callbackUrl);
+      const targetDestination = callbackUrl || data.data?.defaultRedirect || "/requisitions";
+      router.push(targetDestination);
       router.refresh();
     } catch {
       setError("Network error. Please check your connection and try again.");
       setLoading(false);
+      setActivePersonaEmail(null);
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = async (e: React.FormEvent, retryCount = 0) => {
+    if (e) e.preventDefault();
     setError(null);
     setLoading(true);
 
@@ -113,13 +130,23 @@ function LoginForm() {
 
       const data = await res.json();
 
+      // Handle serverless database compute cold start automatically
+      if (res.status === 503 && retryCount < 2) {
+        setIsRetryingColdStart(true);
+        setError("Database compute is waking from sleep. Reconnecting automatically...");
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+        setIsRetryingColdStart(false);
+        return handleSubmit(e, retryCount + 1);
+      }
+
       if (!res.ok || !data.success) {
         setError(data.error || "Invalid email or password.");
         setLoading(false);
         return;
       }
 
-      router.push(callbackUrl);
+      const targetDestination = callbackUrl || data.data?.defaultRedirect || "/requisitions";
+      router.push(targetDestination);
       router.refresh();
     } catch {
       setError("Network error. Please check your connection and try again.");
@@ -131,7 +158,7 @@ function LoginForm() {
     <div className="w-full max-w-5xl mx-auto py-8 sm:py-12 px-4 sm:px-6">
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-center">
         
-        {/* Left Column: Brand Showcase & Value Props (Hidden on mobile or stacked gracefully) */}
+        {/* Left Column: Brand Showcase & Value Props */}
         <motion.div
           initial={{ opacity: 0, x: -20 }}
           animate={{ opacity: 1, x: 0 }}
@@ -215,9 +242,7 @@ function LoginForm() {
                       Sign in to Your Workspace
                     </CardTitle>
                     <CardDescription className="text-xs text-muted-foreground">
-                      {isProduction
-                        ? "Enter your corporate credentials to access your workspace."
-                        : "Enter credentials or select a verified test persona below."}
+                      Enter corporate credentials or select a verified evaluation persona below.
                     </CardDescription>
                   </div>
                   <ShinyBadge variant="primary" size="sm">
@@ -233,9 +258,17 @@ function LoginForm() {
                       initial={{ opacity: 0, height: 0 }}
                       animate={{ opacity: 1, height: "auto" }}
                       exit={{ opacity: 0, height: 0 }}
-                      className="p-3 text-xs rounded-lg bg-destructive/10 text-destructive border border-destructive/20 flex items-start gap-2 overflow-hidden"
+                      className={`p-3 text-xs rounded-lg flex items-start gap-2 overflow-hidden border ${
+                        isRetryingColdStart
+                          ? "bg-primary/10 text-primary border-primary/25"
+                          : "bg-destructive/10 text-destructive border-destructive/20"
+                      }`}
                     >
-                      <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+                      {isRetryingColdStart ? (
+                        <RefreshCw className="h-4 w-4 shrink-0 mt-0.5 animate-spin text-primary" />
+                      ) : (
+                        <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+                      )}
                       <span className="font-medium">{error}</span>
                     </motion.div>
                   )}
@@ -275,7 +308,6 @@ function LoginForm() {
                       placeholder="••••••••••••"
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
-                      required
                       className="pl-9 text-xs sm:text-sm h-10 bg-background/80 focus:ring-2 focus:ring-primary/20"
                       autoComplete="current-password"
                     />
@@ -285,74 +317,83 @@ function LoginForm() {
                 <Button
                   type="submit"
                   className="w-full text-xs sm:text-sm font-bold h-10 shadow-glow-primary bg-primary hover:bg-primary/90 text-primary-foreground gap-2 transition-all duration-200"
-                  isLoading={loading}
+                  isLoading={loading && !activePersonaEmail}
                 >
                   <span>Authenticate &amp; Enter Workspace</span>
                   <ArrowRight className="h-4 w-4" />
                 </Button>
               </CardContent>
 
-              {/* Demo Persona Fast-Selector (Omitted in Production) */}
-              {!isProduction && (
-                <CardFooter className="flex flex-col space-y-3 pt-4 border-t border-white/[0.08] bg-white/[0.02]">
-                  <div className="w-full text-[11px] font-semibold uppercase tracking-wider text-muted-foreground flex items-center justify-between">
-                    <span>Quick Demo Personas</span>
-                    <span className="text-[10px] normal-case font-mono bg-white/[0.05] border border-white/[0.08] px-2 py-0.5 rounded text-muted-foreground font-medium">
-                      One-Click Fast Login
-                    </span>
-                  </div>
+              {/* Dedicated Company Evaluation Demo Personas */}
+              <CardFooter className="flex flex-col space-y-3 pt-4 border-t border-white/[0.08] bg-white/[0.02]">
+                <div className="w-full text-[11px] font-semibold uppercase tracking-wider text-muted-foreground flex items-center justify-between">
+                  <span>Evaluation Demo Personas</span>
+                  <span className="text-[10px] normal-case font-mono bg-primary/10 border border-primary/20 px-2 py-0.5 rounded text-primary font-medium">
+                    1-Click Direct Access
+                  </span>
+                </div>
 
-                  <div className="w-full grid grid-cols-1 gap-2">
-                    {demoAccounts.map((account) => {
-                      const isSelected = email === account.email;
-                      return (
-                        <button
-                          key={account.email}
-                          type="button"
-                          onClick={() => handleQuickFill(account.email)}
-                          className={`w-full text-left p-3 rounded-xl border transition-all duration-200 text-xs flex items-center justify-between group cursor-pointer ${
-                            isSelected
-                              ? "border-primary bg-primary/15 shadow-glow-primary"
-                              : "border-white/[0.08] hover:border-primary/40 hover:bg-white/[0.04] bg-[#141b29]"
-                          }`}
-                        >
-                          <div className="flex items-center gap-3">
-                            <div className="p-2 rounded-lg bg-white/[0.05] border border-white/[0.08] flex-shrink-0">
-                              {account.icon}
+                <div className="w-full grid grid-cols-1 gap-2.5">
+                  {demoAccounts.map((account) => {
+                    const isSelected = email === account.email;
+                    const isCardLoading = loading && activePersonaEmail === account.email;
+
+                    return (
+                      <button
+                        key={account.email}
+                        type="button"
+                        onClick={() => handleQuickFill(account.email)}
+                        disabled={loading}
+                        className={`w-full text-left p-3 rounded-xl border transition-all duration-200 text-xs flex items-center justify-between group cursor-pointer disabled:opacity-70 ${
+                          isSelected
+                            ? "border-primary bg-primary/15 shadow-glow-primary"
+                            : "border-white/[0.08] hover:border-primary/40 hover:bg-white/[0.04] bg-[#141b29]"
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="p-2 rounded-lg bg-white/[0.05] border border-white/[0.08] flex-shrink-0">
+                            {account.icon}
+                          </div>
+                          <div className="space-y-0.5">
+                            <div className="flex items-center gap-2">
+                              <span className="font-bold text-foreground group-hover:text-primary transition-colors">
+                                {account.name}
+                              </span>
+                              <Badge variant="outline" className={`text-[9px] font-mono py-0 px-1.5 ${account.color}`}>
+                                {account.role}
+                              </Badge>
                             </div>
-                            <div className="space-y-0.5">
-                              <div className="flex items-center gap-2">
-                                <span className="font-bold text-foreground group-hover:text-primary transition-colors">
-                                  {account.name}
-                                </span>
-                                <Badge variant="outline" className={`text-[9px] font-mono py-0 px-1.5 ${account.color}`}>
-                                  {account.role}
-                                </Badge>
-                              </div>
-                              <div className="text-muted-foreground text-[11px] font-mono">
-                                {account.email}
-                              </div>
+                            <div className="text-[11px] text-muted-foreground">
+                              {account.description}
+                            </div>
+                            <div className="text-[10px] text-muted-foreground/80 font-mono">
+                              {account.org} &bull; {account.email}
                             </div>
                           </div>
+                        </div>
 
-                          <div className="flex items-center gap-1.5 text-xs font-semibold text-primary">
-                            {isSelected ? (
-                              <span className="flex items-center gap-1 text-primary font-bold text-xs bg-primary/15 px-2 py-1 rounded-md">
-                                <Check className="h-3.5 w-3.5" />
-                                Selected
-                              </span>
-                            ) : (
-                              <span className="opacity-0 group-hover:opacity-100 transition-opacity text-xs font-medium text-muted-foreground group-hover:text-primary">
-                                Select &rarr;
-                              </span>
-                            )}
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </CardFooter>
-              )}
+                        <div className="flex items-center gap-1.5 text-xs font-semibold text-primary shrink-0 pl-2">
+                          {isCardLoading ? (
+                            <span className="flex items-center gap-1.5 text-primary text-xs">
+                              <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                              <span>Authenticating...</span>
+                            </span>
+                          ) : isSelected ? (
+                            <span className="flex items-center gap-1 text-primary font-bold text-xs bg-primary/15 px-2 py-1 rounded-md">
+                              <Check className="h-3.5 w-3.5" />
+                              Active
+                            </span>
+                          ) : (
+                            <span className="opacity-0 group-hover:opacity-100 transition-opacity text-xs font-medium text-muted-foreground group-hover:text-primary">
+                              Enter &rarr;
+                            </span>
+                          )}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </CardFooter>
             </form>
           </Card>
 
@@ -361,7 +402,7 @@ function LoginForm() {
             <span>Strict multi-tenant boundary, DPDP Section 12 &amp; SHA-256 session integrity</span>
           </div>
           <div className="text-center text-[11px] text-muted-foreground/80 mt-2">
-            Enterprise multi-tenant access: user accounts and client portals are provisioned by your system administrator.
+            Dedicated evaluation personas access isolated, pre-seeded benchmarks without exposing production credentials.
           </div>
         </motion.div>
       </div>

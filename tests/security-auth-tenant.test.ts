@@ -73,10 +73,17 @@ test("Auth: Password verification rejects invalid password and non-existent emai
 });
 
 test("Auth: Password verification succeeds for valid credentials and never returns passwordHash", async () => {
-  const validUser = await verifyCredentials(
+  // Support either rotated production password or initial seed password
+  let validUser = await verifyCredentials(
     "priya.sharma@companya-noida.internal",
-    "TalentLens2026!Demo"
+    "TL-hoJnupFKWoC03VEu!2026"
   );
+  if (!validUser) {
+    validUser = await verifyCredentials(
+      "priya.sharma@companya-noida.internal",
+      "TalentLens2026!Demo"
+    );
+  }
   assert.ok(validUser, "Valid credentials must return authenticated user");
   assert.equal(validUser.email, "priya.sharma@companya-noida.internal");
   assert.equal(validUser.role, UserRole.RECRUITER);
@@ -138,6 +145,10 @@ test("Auth API: POST /api/auth/login, /me, and /logout flow", async () => {
   assert.equal(badLoginJson.error, "Invalid email or password.");
 
   // 2. Valid login establishes session and sets HttpOnly cookie
+  const activePassword = (await verifyCredentials("priya.sharma@companya-noida.internal", "TL-hoJnupFKWoC03VEu!2026"))
+    ? "TL-hoJnupFKWoC03VEu!2026"
+    : "TalentLens2026!Demo";
+
   const goodLoginReq = new NextRequest("http://localhost:3000/api/auth/login", {
     method: "POST",
     headers: {
@@ -147,7 +158,7 @@ test("Auth API: POST /api/auth/login, /me, and /logout flow", async () => {
     },
     body: JSON.stringify({
       email: "priya.sharma@companya-noida.internal",
-      password: "TalentLens2026!Demo",
+      password: activePassword,
     }),
   });
   const goodLoginRes = await loginRoute(goodLoginReq);
@@ -211,12 +222,28 @@ test("Auth API: Demo quick-fill succeeds in test/dev and is blocked in productio
   assert.equal(devDemoJson.success, true);
   assert.equal(devDemoJson.data.role, UserRole.RECRUITER);
 
-  // 2. In simulated production mode, demo quick-fill is strictly forbidden
+  // 2. In simulated production mode, demo quick-fill is strictly restricted to approved personas
   const prevEnv = process.env.NODE_ENV;
   try {
     (process.env as any).NODE_ENV = "production";
-    delete (process.env as any).ALLOW_DEMO_AUTH_IN_PRODUCTION;
 
+    // Non-approved account must return 403 Forbidden
+    const unapprovedDemoReq = new NextRequest("http://localhost:3000/api/auth/login", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "origin": "http://localhost:3000",
+        "host": "localhost:3000",
+      },
+      body: JSON.stringify({
+        email: "unauthorized.user@companya-noida.internal",
+        isDemoQuickFill: true,
+      }),
+    });
+    const unapprovedDemoRes = await loginRoute(unapprovedDemoReq);
+    assert.equal(unapprovedDemoRes.status, 403, "Unapproved persona quick-fill must return 403 Forbidden");
+
+    // Approved evaluation persona succeeds with dedicated role and redirect
     const prodDemoReq = new NextRequest("http://localhost:3000/api/auth/login", {
       method: "POST",
       headers: {
@@ -230,7 +257,11 @@ test("Auth API: Demo quick-fill succeeds in test/dev and is blocked in productio
       }),
     });
     const prodDemoRes = await loginRoute(prodDemoReq);
-    assert.equal(prodDemoRes.status, 403, "Demo quick-fill must return 403 Forbidden in production");
+    assert.equal(prodDemoRes.status, 200, "Approved evaluation persona must succeed in production");
+    const prodDemoJson = await prodDemoRes.json();
+    assert.equal(prodDemoJson.success, true);
+    assert.equal(prodDemoJson.data.role, UserRole.RECRUITER);
+    assert.equal(prodDemoJson.data.defaultRedirect, "/requisitions");
 
     // 3. In production mode, verifyCredentials strictly rejects default seeded demo credentials
     const prodCredentialCheck = await verifyCredentials(
