@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
 import {
   CriterionInput,
@@ -21,6 +22,7 @@ export interface ScreenCandidateOptions {
   provider?: ScreeningProvider | string;
   actorId?: string;
   requireExplicitConsent?: boolean;
+  forceRescreen?: boolean;
 }
 
 export class ScreeningError extends Error {
@@ -212,6 +214,71 @@ export async function screenCandidate(
 
   const originalResumeText = latestDoc.extractedText;
   const linkedApplication = candidate.applications[0];
+
+  // 5.1 Evaluation Idempotency & Network Retry Guard:
+  // If this candidate was already evaluated for this requisition and document,
+  // and the scorecard criteria haven't changed, return the existing evaluation
+  // to prevent duplicate database records on retried requests.
+  if (!options.forceRescreen) {
+    const existingEval = await prisma.evaluation.findFirst({
+      where: {
+        candidateId,
+        requisitionId,
+        documentId: latestDoc.id,
+        status: "COMPLETED",
+      },
+      orderBy: { createdAt: "desc" },
+      include: {
+        criterionScores: true,
+        scorecardSnapshot: true,
+      },
+    });
+
+    if (existingEval && existingEval.scorecardSnapshot) {
+      const existingCriteria = existingEval.scorecardSnapshot.criteria as any[];
+      const isSameCriteria =
+        Array.isArray(existingCriteria) &&
+        existingCriteria.length === criteriaInputs.length &&
+        existingCriteria.every((ec) => {
+          const matching = criteriaInputs.find(
+            (ci) => ci.id === ec.id || ci.name === ec.name
+          );
+          return (
+            matching &&
+            matching.weight === ec.weight &&
+            matching.isMustHave === ec.isMustHave
+          );
+        });
+
+      if (isSameCriteria) {
+        return {
+          evaluationId: existingEval.id,
+          overallScore: existingEval.overallScore || 0,
+          evidenceCoverage: existingEval.evidenceCoverage || 0,
+          supportedCount: existingEval.supportedCount,
+          partialCount: existingEval.partialCount,
+          insufficientCount: existingEval.insufficientCount,
+          hasMustHaveWarnings: existingEval.hasMustHaveWarnings,
+          mustHaveWarnings: (existingEval.mustHaveWarnings as string[]) || [],
+          criterionScores: existingEval.criterionScores.map((cs) => ({
+            criterionId: cs.criterionId || "",
+            criterionName: cs.criterionName,
+            weight: cs.weight,
+            isMustHave: cs.isMustHave,
+            score: cs.score,
+            status: cs.status as any,
+            explanation: cs.explanation,
+            quotes: (cs.quotes as any) || [],
+            missingGaps: (cs.missingGaps as string[]) || [],
+          })),
+          redactedContent: existingEval.redactedContent || "",
+          provider: existingEval.provider,
+          modelId: existingEval.modelId,
+          promptVersion: existingEval.promptVersion,
+        };
+      }
+    }
+  }
 
   // 6. Redact PII & Neutralize Prompt Injections, building bidirectional SourceMap
   const redaction = redactResumePii(originalResumeText, {

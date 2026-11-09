@@ -69,38 +69,55 @@ Respond strictly with a JSON object in this format:
   ]
 }`;
 
-    let response: Response;
-    try {
-      // 30-second timeout to prevent hung requests
-      const signal = AbortSignal.timeout(30000);
+    let response: Response | null = null;
+    const maxAttempts = 2;
 
-      response = await fetch(`${this.apiBaseUrl}/chat/completions`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${this.apiKey}`,
-        },
-        body: JSON.stringify({
-          model: this.modelId,
-          messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: userPrompt },
-          ],
-          response_format: { type: "json_object" },
-          temperature: 0.1,
-        }),
-        signal,
-      });
-    } catch (err: any) {
-      if (err.name === "TimeoutError" || err.message?.includes("aborted")) {
-        throw new Error("AI provider request timed out after 30 seconds.");
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        // 30-second timeout per attempt to prevent hung requests
+        const signal = AbortSignal.timeout(30000);
+
+        const res = await fetch(`${this.apiBaseUrl}/chat/completions`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${this.apiKey}`,
+          },
+          body: JSON.stringify({
+            model: this.modelId,
+            messages: [
+              { role: "system", content: systemPrompt },
+              { role: "user", content: userPrompt },
+            ],
+            response_format: { type: "json_object" },
+            temperature: 0.1,
+          }),
+          signal,
+        });
+
+        // Automatic retry on transient rate limits (429) or server errors (5xx)
+        if ((res.status === 429 || res.status >= 500) && attempt < maxAttempts) {
+          await new Promise((resolve) => setTimeout(resolve, 1500));
+          continue;
+        }
+
+        response = res;
+        break;
+      } catch (err: any) {
+        if (attempt < maxAttempts && !err.message?.includes("aborted")) {
+          await new Promise((resolve) => setTimeout(resolve, 1500));
+          continue;
+        }
+        if (err.name === "TimeoutError" || err.message?.includes("aborted")) {
+          throw new Error("AI provider request timed out after 30 seconds.");
+        }
+        throw new Error(`AI provider network request failed: ${err.message}`);
       }
-      throw new Error(`AI provider network request failed: ${err.message}`);
     }
 
-    if (!response.ok) {
+    if (!response || !response.ok) {
       // Do not log or leak sensitive resume text in error message
-      throw new Error(`AI provider returned non-success HTTP status ${response.status}.`);
+      throw new Error(`AI provider returned non-success HTTP status ${response?.status || "UNKNOWN"}.`);
     }
 
     let data: any;

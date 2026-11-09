@@ -97,9 +97,10 @@ export function validateFileSignature(
  * Sanitizes and generates a cryptographically secure random storage key.
  * Never uses client-supplied filenames for physical paths.
  */
-export function generateStorageKey(extension: "pdf" | "docx"): string {
+export function generateStorageKey(extension: "pdf" | "docx", prefix?: string): string {
   const uniqueId = crypto.randomUUID();
-  return `${uniqueId}.${extension}`;
+  const sanitizedPrefix = prefix ? prefix.replace(/[^a-zA-Z0-9_-]/g, "") : undefined;
+  return sanitizedPrefix ? `${sanitizedPrefix}/${uniqueId}.${extension}` : `${uniqueId}.${extension}`;
 }
 
 /**
@@ -114,12 +115,21 @@ export class LocalStorageProvider implements StorageProvider {
   }
 
   private resolvePath(storageKey: string): string {
-    // Path traversal defense: strip any directory separators or parent traversal tokens
-    const sanitizedKey = path.basename(storageKey);
-    if (!sanitizedKey || sanitizedKey !== storageKey) {
+    // Multi-tenant path traversal defense
+    const normalizedKey = storageKey.replace(/\\/g, "/");
+    if (
+      normalizedKey.includes("..") ||
+      normalizedKey.startsWith("/") ||
+      path.isAbsolute(storageKey)
+    ) {
       throw new Error("Invalid storage key: path traversal detected.");
     }
-    return path.join(this.baseDir, sanitizedKey);
+    const resolved = path.resolve(this.baseDir, normalizedKey);
+    const resolvedBase = path.resolve(this.baseDir);
+    if (!resolved.startsWith(resolvedBase + path.sep) && resolved !== resolvedBase) {
+      throw new Error("Invalid storage key: path traversal detected.");
+    }
+    return resolved;
   }
 
   async put(storageKey: string, buffer: Buffer): Promise<{ storageKey: string; sizeBytes: number }> {

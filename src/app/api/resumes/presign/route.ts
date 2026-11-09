@@ -121,7 +121,7 @@ export async function POST(req: NextRequest) {
           ? "application/pdf"
           : "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 
-      const storageKey = generateStorageKey(ext as "pdf" | "docx");
+      const storageKey = generateStorageKey(ext as "pdf" | "docx", user.organizationId);
 
       // Generate presigned upload URL (valid for 15 minutes)
       let presignedInfo;

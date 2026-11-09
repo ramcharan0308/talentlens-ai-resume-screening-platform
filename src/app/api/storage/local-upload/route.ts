@@ -28,11 +28,23 @@ export async function PUT(req: NextRequest) {
       );
     }
 
-    // Path traversal defense
-    const sanitizedKey = path.basename(key);
-    if (!sanitizedKey || sanitizedKey !== key) {
+    // Multi-tenant path traversal defense
+    const normalizedKey = key.replace(/\\/g, "/");
+    if (
+      normalizedKey.includes("..") ||
+      normalizedKey.startsWith("/") ||
+      path.isAbsolute(key)
+    ) {
       return NextResponse.json(
         { success: false, error: "Invalid storage key: path traversal detected." },
+        { status: 400 }
+      );
+    }
+
+    const segments = normalizedKey.split("/");
+    if (segments.length > 2) {
+      return NextResponse.json(
+        { success: false, error: "Invalid storage key format." },
         { status: 400 }
       );
     }
@@ -66,11 +78,11 @@ export async function PUT(req: NextRequest) {
     }
 
     const storage = getStorageProvider();
-    await storage.put(sanitizedKey, buffer, validation.detectedType);
+    await storage.put(normalizedKey, buffer, validation.detectedType);
 
     return NextResponse.json({
       success: true,
-      storageKey: sanitizedKey,
+      storageKey: normalizedKey,
       sizeBytes: buffer.length,
       detectedType: validation.detectedType,
     });

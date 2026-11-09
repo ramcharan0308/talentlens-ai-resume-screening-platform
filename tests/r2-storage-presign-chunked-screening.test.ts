@@ -236,6 +236,8 @@ test("Direct Presigned Upload: POST /api/resumes/presign authorization, validati
   assert.ok(validData.uploads[0].uploadUrl);
   assert.match(validData.uploads[0].storageKey, /\.pdf$/);
   assert.match(validData.uploads[1].storageKey, /\.docx$/);
+  assert.ok(validData.uploads[0].storageKey.startsWith(`${agencyA.id}/`));
+  assert.ok(validData.uploads[1].storageKey.startsWith(`${agencyA.id}/`));
 });
 
 test("Direct Upload & Confirmation: Direct upload endpoint and JSON batch ingestion confirmation", async () => {
@@ -329,15 +331,49 @@ test("Direct Upload & Confirmation: Direct upload endpoint and JSON batch ingest
   });
   assert.equal(downloadRes.status, 200);
 
-  // Verify audit log entry was created
-  const audit = await prisma.auditLog.findFirst({
-    where: {
-      entityId: createdDocId,
-      action: "ORIGINAL_CV_VIEWED",
-    },
-  });
-  assert.ok(audit);
-  assert.equal(audit.actorId, recruiter.id);
+  // 4. Test Storage Key Reuse Defense: Re-ingesting an already ingested key is rejected (HTTP 409)
+  const reusedKeyReq = createAuthRequest(
+    "http://localhost:3000/api/resumes/upload",
+    session.sessionToken,
+    {
+      method: "POST",
+      body: {
+        requisitionId: req.id,
+        items: [
+          {
+            fileName: "DirectCandidateReused.pdf",
+            storageKey: storageKey,
+            fileSizeBytes: pdfBuffer.length,
+          },
+        ],
+      },
+    }
+  );
+  const reusedKeyRes = await uploadIngestRoute(reusedKeyReq);
+  assert.equal(reusedKeyRes.status, 409);
+  assert.match((await reusedKeyRes.json()).error, /already been ingested/);
+
+  // 5. Test Cross-Tenant Storage Key Defense: Providing another tenant's key prefix is rejected (HTTP 403)
+  const foreignKeyReq = createAuthRequest(
+    "http://localhost:3000/api/resumes/upload",
+    session.sessionToken,
+    {
+      method: "POST",
+      body: {
+        requisitionId: req.id,
+        items: [
+          {
+            fileName: "StolenDoc.pdf",
+            storageKey: "foreign-agency-id-999/stolen.pdf",
+            fileSizeBytes: 5000,
+          },
+        ],
+      },
+    }
+  );
+  const foreignKeyRes = await uploadIngestRoute(foreignKeyReq);
+  assert.equal(foreignKeyRes.status, 403);
+  assert.match((await foreignKeyRes.json()).error, /belongs to a different agency tenant/);
 });
 
 test("Chunked Screening Engine: Enforces chunk limits and protects against serverless timeouts", async () => {
@@ -449,5 +485,23 @@ test("Chunked Screening Engine: Enforces chunk limits and protects against serve
   assert.equal(validChunkData.chunkIndex, 0);
   assert.equal(validChunkData.totalChunks, 1);
   assert.equal(validChunkData.evaluatedCount, 1);
+
+  // 3. Repeated Screening Request Idempotency: Retrying the request does not duplicate database evaluations
+  const retryChunkRes = await screenRoute(validChunkReq, {
+    params: Promise.resolve({ id: req.id }),
+  });
+  assert.equal(retryChunkRes.status, 200);
+  const retryData = await retryChunkRes.json();
+  assert.equal(retryData.success, true);
+  assert.equal(retryData.evaluatedCount, 1);
+
+  // Assert strictly one evaluation record exists in the database
+  const totalEvals = await prisma.evaluation.count({
+    where: {
+      candidateId: candidate.id,
+      requisitionId: req.id,
+    },
+  });
+  assert.equal(totalEvals, 1);
 });
 

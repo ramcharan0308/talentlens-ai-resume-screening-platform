@@ -4,6 +4,8 @@ import { requireAuth } from "@/lib/auth-guard";
 import { UserRole, OrganizationType } from "@prisma/client";
 import { screenCandidate, ScreeningError } from "@/lib/screening";
 
+export const maxDuration = 60;
+export const dynamic = "force-dynamic";
 export const MAX_SCREENING_CHUNK_SIZE = 15;
 
 export async function POST(
@@ -114,6 +116,7 @@ export async function POST(
           requisitionId,
           candidateId,
           actorId: user.id,
+          forceRescreen: body.forceRescreen === true,
         });
         results.push(evalResult);
       } catch (err: any) {

@@ -5,6 +5,9 @@ import { requireAuth } from "@/lib/auth-guard";
 import { executeBatchJob, IngestItemInput, MAX_BATCH_FILES } from "@/lib/ingest/processor";
 import { UserRole } from "@prisma/client";
 
+export const maxDuration = 60;
+export const dynamic = "force-dynamic";
+
 export async function POST(req: NextRequest) {
   try {
     const authResult = await requireAuth(req, [UserRole.RECRUITER]);
@@ -78,12 +81,44 @@ export async function POST(req: NextRequest) {
           );
         }
 
-        // Path traversal defense
-        const sanitizedKey = path.basename(item.storageKey);
-        if (sanitizedKey !== item.storageKey) {
+        // Multi-tenant path traversal and cross-tenant storage isolation defense
+        const normalizedKey = item.storageKey.replace(/\\/g, "/");
+        if (
+          normalizedKey.includes("..") ||
+          normalizedKey.startsWith("/") ||
+          path.isAbsolute(item.storageKey)
+        ) {
           return NextResponse.json(
             { success: false, error: `Invalid storage key at index ${i}: path traversal detected.` },
             { status: 400 }
+          );
+        }
+
+        const segments = normalizedKey.split("/");
+        if (segments.length > 2) {
+          return NextResponse.json(
+            { success: false, error: `Invalid storage key format at index ${i}.` },
+            { status: 400 }
+          );
+        }
+
+        // If storage key has a tenant prefix, verify it strictly matches the authenticated user's organization
+        if (segments.length === 2 && segments[0] !== user.organizationId) {
+          return NextResponse.json(
+            { success: false, error: `Forbidden: Storage key at index ${i} belongs to a different agency tenant.` },
+            { status: 403 }
+          );
+        }
+
+        // Storage Key Reuse Defense: Ensure the storage key has not already been ingested
+        const keyAlreadyClaimed = await prisma.uploadedDocument.findFirst({
+          where: { storageKey: item.storageKey },
+          select: { id: true, agencyId: true },
+        });
+        if (keyAlreadyClaimed) {
+          return NextResponse.json(
+            { success: false, error: `Invalid storage key at index ${i}: storage key has already been ingested.` },
+            { status: 409 }
           );
         }
 
