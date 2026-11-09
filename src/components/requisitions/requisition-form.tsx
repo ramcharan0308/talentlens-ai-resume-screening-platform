@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
+import { motion, AnimatePresence } from "motion/react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,6 +23,9 @@ import {
   Save,
   CheckCircle,
   ArrowLeft,
+  Building2,
+  Sliders,
+  Sparkles,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -58,6 +62,27 @@ export function RequisitionForm({ initialData, isEdit = false }: RequisitionForm
     initialData?.coreSkills || ["Java", "Spring Boot", "Microservices", "REST APIs", "PostgreSQL", "Kafka"]
   );
   const [skillInput, setSkillInput] = React.useState("");
+  const [clientOrgId, setClientOrgId] = React.useState<string>(initialData?.clientOrganizationId || "");
+  const [availableClients, setAvailableClients] = React.useState<Array<{ id: string; name: string }>>([]);
+
+  React.useEffect(() => {
+    let isMounted = true;
+    const timer = setTimeout(() => {
+      fetch("/api/clients")
+        .then((res) => res.json())
+        .then((json) => {
+          if (isMounted && json.success && Array.isArray(json.data)) {
+            setAvailableClients(json.data);
+          }
+        })
+        .catch(() => {});
+    }, 0);
+
+    return () => {
+      isMounted = false;
+      clearTimeout(timer);
+    };
+  }, []);
 
   const [jobDescription, setJobDescription] = React.useState(
     initialData?.jobDescription ||
@@ -125,7 +150,6 @@ export function RequisitionForm({ initialData, isEdit = false }: RequisitionForm
 
   const totalWeight = criteria.reduce((sum, c) => sum + (Number(c.weight) || 0), 0);
 
-  // Skill tag add
   const handleAddSkill = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter" || e.key === ",") {
       e.preventDefault();
@@ -179,6 +203,7 @@ export function RequisitionForm({ initialData, isEdit = false }: RequisitionForm
         coreSkills,
         jobDescription: jobDescription.trim(),
         status: targetStatus,
+        clientOrganizationId: clientOrgId ? clientOrgId : null,
         scorecardCriteria: criteria,
       };
 
@@ -240,27 +265,27 @@ export function RequisitionForm({ initialData, isEdit = false }: RequisitionForm
         <div className="space-y-1">
           <Link
             href="/requisitions"
-            className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors mb-1"
+            className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors mb-1"
           >
             <ArrowLeft className="h-3.5 w-3.5" />
             <span>Back to Requisitions</span>
           </Link>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground">
-            {isEdit ? "Edit Requisition & Scorecard" : "Create New Staffing Requisition"}
+          <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-foreground">
+            {isEdit ? "Edit Requisition & Rubric" : "Create Staffing Requisition"}
           </h1>
-          <p className="text-xs text-muted-foreground">
-            Configure job specifications, candidate hiring constraints, and AI scorecard evaluation rubrics.
+          <p className="text-xs sm:text-sm text-muted-foreground">
+            Configure job specifications, candidate compliance constraints, and AI scorecard evaluation rubrics.
           </p>
         </div>
 
-        {/* Tab switchers */}
-        <div className="flex items-center p-1 bg-muted/60 rounded-lg border text-xs font-medium self-start sm:self-auto">
+        {/* Tab Switcher */}
+        <div className="flex items-center p-1 bg-muted/70 rounded-xl border border-border/60 text-xs font-semibold self-start sm:self-auto shadow-inner">
           <button
             type="button"
             onClick={() => setActiveTab("profile")}
-            className={`px-3 py-1.5 rounded-md transition-colors ${
+            className={`relative px-3.5 py-1.5 rounded-lg transition-all ${
               activeTab === "profile"
-                ? "bg-card text-foreground shadow-sm"
+                ? "bg-card text-foreground shadow-sm font-bold"
                 : "text-muted-foreground hover:text-foreground"
             }`}
           >
@@ -269,18 +294,18 @@ export function RequisitionForm({ initialData, isEdit = false }: RequisitionForm
           <button
             type="button"
             onClick={() => setActiveTab("scorecard")}
-            className={`px-3 py-1.5 rounded-md transition-colors flex items-center gap-1.5 ${
+            className={`relative px-3.5 py-1.5 rounded-lg transition-all flex items-center gap-1.5 ${
               activeTab === "scorecard"
-                ? "bg-card text-foreground shadow-sm"
+                ? "bg-card text-foreground shadow-sm font-bold"
                 : "text-muted-foreground hover:text-foreground"
             }`}
           >
             <span>2. Scorecard Rubric</span>
             <span
-              className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
+              className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono font-bold ${
                 totalWeight === 100
-                  ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"
-                  : "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300"
+                  ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30"
+                  : "bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30"
               }`}
             >
               {totalWeight}%
@@ -291,7 +316,7 @@ export function RequisitionForm({ initialData, isEdit = false }: RequisitionForm
 
       {/* Error Banner */}
       {errorMessage && (
-        <div className="p-3 bg-destructive/10 border border-destructive/30 rounded-lg text-xs text-destructive flex items-center gap-2">
+        <div className="p-3.5 bg-destructive/10 border border-destructive/30 rounded-xl text-xs text-destructive flex items-center gap-2.5">
           <AlertCircle className="h-4 w-4 shrink-0" />
           <span>{errorMessage}</span>
         </div>
@@ -299,9 +324,14 @@ export function RequisitionForm({ initialData, isEdit = false }: RequisitionForm
 
       {/* Tab 1: Profile & Requirements */}
       {activeTab === "profile" && (
-        <div className="space-y-6">
-          <Card>
-            <CardHeader>
+        <motion.div
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.18 }}
+          className="space-y-6"
+        >
+          <Card className="border-border/70 shadow-sm">
+            <CardHeader className="pb-4">
               <CardTitle className="text-base flex items-center gap-2">
                 <Briefcase className="h-4 w-4 text-primary" />
                 <span>Position Profile</span>
@@ -313,7 +343,7 @@ export function RequisitionForm({ initialData, isEdit = false }: RequisitionForm
             <CardContent className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-1.5">
-                  <Label htmlFor="title">Job Title *</Label>
+                  <Label htmlFor="title" className="text-xs font-semibold">Job Title *</Label>
                   <Input
                     id="title"
                     value={title}
@@ -323,7 +353,7 @@ export function RequisitionForm({ initialData, isEdit = false }: RequisitionForm
                 </div>
 
                 <div className="space-y-1.5">
-                  <Label htmlFor="department">Department / Practice</Label>
+                  <Label htmlFor="department" className="text-xs font-semibold">Department / Practice</Label>
                   <Input
                     id="department"
                     value={department}
@@ -335,7 +365,7 @@ export function RequisitionForm({ initialData, isEdit = false }: RequisitionForm
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-1.5">
-                  <Label htmlFor="location" className="flex items-center gap-1">
+                  <Label htmlFor="location" className="text-xs font-semibold flex items-center gap-1">
                     <MapPin className="h-3 w-3 text-muted-foreground" />
                     <span>Location & Workplace Model</span>
                   </Label>
@@ -348,7 +378,7 @@ export function RequisitionForm({ initialData, isEdit = false }: RequisitionForm
                 </div>
 
                 <div className="space-y-1.5">
-                  <Label htmlFor="salary" className="flex items-center gap-1">
+                  <Label htmlFor="salary" className="text-xs font-semibold flex items-center gap-1">
                     <IndianRupee className="h-3 w-3 text-muted-foreground" />
                     <span>Target CTC / Salary Range</span>
                   </Label>
@@ -360,12 +390,35 @@ export function RequisitionForm({ initialData, isEdit = false }: RequisitionForm
                   />
                 </div>
               </div>
+
+              <div className="space-y-1.5 pt-3 border-t border-border/50">
+                <Label htmlFor="clientOrg" className="text-xs font-semibold flex items-center gap-1">
+                  <Building2 className="h-3.5 w-3.5 text-primary" />
+                  <span>Client Organization Assignment</span>
+                </Label>
+                <select
+                  id="clientOrg"
+                  value={clientOrgId}
+                  onChange={(e) => setClientOrgId(e.target.value)}
+                  className="flex h-9 w-full rounded-lg border border-input bg-background px-3 py-1 text-xs shadow-xs transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <option value="">-- No Client Organization (Internal / Unassigned) --</option>
+                  {availableClients.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-[11px] text-muted-foreground">
+                  Assigning a client organization allows hiring managers from that client to review submitted candidates in their portal.
+                </p>
+              </div>
             </CardContent>
           </Card>
 
           {/* Hiring Constraints & Experience */}
-          <Card>
-            <CardHeader>
+          <Card className="border-border/70 shadow-sm">
+            <CardHeader className="pb-4">
               <CardTitle className="text-base flex items-center gap-2">
                 <Clock className="h-4 w-4 text-primary" />
                 <span>Experience & Notice Period Constraints</span>
@@ -377,7 +430,7 @@ export function RequisitionForm({ initialData, isEdit = false }: RequisitionForm
             <CardContent className="space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div className="space-y-1.5">
-                  <Label htmlFor="minExp">Min Experience (Years)</Label>
+                  <Label htmlFor="minExp" className="text-xs font-semibold">Min Experience (Years)</Label>
                   <Input
                     id="minExp"
                     type="number"
@@ -390,7 +443,7 @@ export function RequisitionForm({ initialData, isEdit = false }: RequisitionForm
                 </div>
 
                 <div className="space-y-1.5">
-                  <Label htmlFor="maxExp">Max Experience (Years)</Label>
+                  <Label htmlFor="maxExp" className="text-xs font-semibold">Max Experience (Years)</Label>
                   <Input
                     id="maxExp"
                     type="number"
@@ -403,7 +456,7 @@ export function RequisitionForm({ initialData, isEdit = false }: RequisitionForm
                 </div>
 
                 <div className="space-y-1.5">
-                  <Label htmlFor="noticeDays" className="flex items-center gap-1">
+                  <Label htmlFor="noticeDays" className="text-xs font-semibold flex items-center gap-1">
                     <Calendar className="h-3 w-3 text-muted-foreground" />
                     <span>Max Notice Period (Days)</span>
                   </Label>
@@ -420,19 +473,19 @@ export function RequisitionForm({ initialData, isEdit = false }: RequisitionForm
 
               {/* Core Skills Tag Input */}
               <div className="space-y-2 pt-2">
-                <Label>Core Skills & Tech Stack Tags</Label>
-                <div className="flex flex-wrap gap-1.5 p-2 bg-muted/30 border rounded-md min-h-[44px]">
+                <Label className="text-xs font-semibold">Core Skills & Tech Stack Tags</Label>
+                <div className="flex flex-wrap gap-1.5 p-2.5 bg-muted/30 border border-border/70 rounded-lg min-h-[44px]">
                   {coreSkills.map((skill) => (
                     <Badge
                       key={skill}
                       variant="secondary"
-                      className="text-xs gap-1 pl-2.5 pr-1.5 py-0.5"
+                      className="text-xs gap-1.5 pl-2.5 pr-1.5 py-0.5 rounded-md"
                     >
                       <span>{skill}</span>
                       <button
                         type="button"
                         onClick={() => handleRemoveSkill(skill)}
-                        className="text-muted-foreground hover:text-foreground"
+                        className="text-muted-foreground hover:text-foreground transition-colors"
                       >
                         <X className="h-3 w-3" />
                       </button>
@@ -452,8 +505,8 @@ export function RequisitionForm({ initialData, isEdit = false }: RequisitionForm
           </Card>
 
           {/* Job Description Textarea */}
-          <Card>
-            <CardHeader>
+          <Card className="border-border/70 shadow-sm">
+            <CardHeader className="pb-4">
               <CardTitle className="text-base">Detailed Job Description *</CardTitle>
               <CardDescription className="text-xs">
                 Full role summary, key responsibilities, qualifications, and domain expectations.
@@ -469,24 +522,30 @@ export function RequisitionForm({ initialData, isEdit = false }: RequisitionForm
               />
             </CardContent>
           </Card>
-        </div>
+        </motion.div>
       )}
 
       {/* Tab 2: Scorecard Rubric Builder */}
       {activeTab === "scorecard" && (
-        <ScorecardBuilder criteria={criteria} onChange={setCriteria} />
+        <motion.div
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.18 }}
+        >
+          <ScorecardBuilder criteria={criteria} onChange={setCriteria} />
+        </motion.div>
       )}
 
       {/* Bottom Sticky Action Bar */}
-      <div className="flex flex-col sm:flex-row items-center justify-between gap-4 p-4 bg-card border rounded-lg shadow-sm">
+      <div className="sticky bottom-4 z-20 flex flex-col sm:flex-row items-center justify-between gap-4 p-4 bg-card/90 backdrop-blur-md border border-border/80 rounded-xl shadow-lg">
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <span>Status after save:</span>
+          <span className="font-medium">Status after save:</span>
           {totalWeight === 100 ? (
-            <Badge variant="success" className="text-xs">
+            <Badge variant="success" className="text-xs font-semibold">
               Eligible for ACTIVE
             </Badge>
           ) : (
-            <Badge variant="warning" className="text-xs">
+            <Badge variant="warning" className="text-xs font-semibold">
               Draft Only ({totalWeight}% Weight)
             </Badge>
           )}

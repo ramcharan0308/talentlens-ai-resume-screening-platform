@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { motion, AnimatePresence } from "motion/react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -168,8 +169,8 @@ export function ScorecardBuilder({
   return (
     <div className="space-y-6">
       {/* Header & Weight Meter Card */}
-      <Card className="border-border shadow-sm">
-        <CardHeader className="pb-3">
+      <Card className="border-border/80 shadow-sm overflow-hidden">
+        <CardHeader className="pb-3.5">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
               <CardTitle className="text-base flex items-center gap-2">
@@ -177,7 +178,7 @@ export function ScorecardBuilder({
                 <span>Weighted Evaluation Scorecard</span>
               </CardTitle>
               <CardDescription className="text-xs mt-0.5">
-                Define the grading dimensions used by AI models and recruiters. Criteria weights must sum to exactly 100%.
+                Define grading dimensions used by AI models and recruiters. Criteria weights must sum to exactly 100%.
               </CardDescription>
             </div>
 
@@ -188,7 +189,7 @@ export function ScorecardBuilder({
                   variant="outline"
                   size="sm"
                   onClick={() => loadTemplate("java")}
-                  className="text-xs h-8 gap-1 bg-muted/40"
+                  className="text-xs h-8 gap-1.5 bg-muted/30 hover:bg-muted/60"
                 >
                   <Sparkles className="h-3.5 w-3.5 text-amber-500" />
                   <span>Load Java Benchmark</span>
@@ -198,7 +199,7 @@ export function ScorecardBuilder({
                   variant="outline"
                   size="sm"
                   onClick={() => loadTemplate("fullstack")}
-                  className="text-xs h-8 gap-1 bg-muted/40"
+                  className="text-xs h-8 gap-1.5 bg-muted/30 hover:bg-muted/60"
                 >
                   <Sparkles className="h-3.5 w-3.5 text-blue-500" />
                   <span>Load Full Stack</span>
@@ -208,34 +209,34 @@ export function ScorecardBuilder({
           </div>
         </CardHeader>
 
-        <CardContent className="space-y-3">
+        <CardContent className="space-y-3.5">
           {/* Progress / Weight Gauge */}
-          <div className="space-y-1.5">
+          <div className="space-y-2">
             <div className="flex items-center justify-between text-xs">
-              <span className="font-medium text-foreground flex items-center gap-1.5">
+              <span className="font-semibold text-foreground flex items-center gap-1.5">
                 {isBalanced && (
-                  <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                  <CheckCircle2 className="h-4 w-4 text-emerald-500" />
                 )}
                 {isOver && <AlertCircle className="h-4 w-4 text-destructive" />}
                 {isUnder && <AlertCircle className="h-4 w-4 text-amber-500" />}
                 <span>
-                  Total Weight: <strong>{totalWeight}%</strong> / 100%
+                  Total Weight: <strong className="font-mono">{totalWeight}%</strong> / 100%
                 </span>
               </span>
 
               <span className="text-muted-foreground">
                 {isBalanced && (
-                  <Badge variant="success" className="text-[11px] py-0 px-2 font-medium">
+                  <Badge variant="success" className="text-[11px] py-0 px-2.5 font-semibold">
                     100% Balanced
                   </Badge>
                 )}
                 {isUnder && (
-                  <span className="text-amber-600 dark:text-amber-400 font-medium">
+                  <span className="text-amber-600 dark:text-amber-400 font-semibold font-mono">
                     +{100 - totalWeight}% remaining
                   </span>
                 )}
                 {isOver && (
-                  <span className="text-destructive font-medium">
+                  <span className="text-destructive font-semibold font-mono">
                     -{totalWeight - 100}% over limit
                   </span>
                 )}
@@ -243,23 +244,25 @@ export function ScorecardBuilder({
             </div>
 
             {/* Visual Bar */}
-            <div className="h-2 w-full bg-muted rounded-full overflow-hidden flex">
-              <div
-                className={`h-full transition-all duration-300 ${
+            <div className="h-2.5 w-full bg-muted/60 rounded-full overflow-hidden flex shadow-inner">
+              <motion.div
+                className={`h-full transition-colors duration-300 ${
                   isBalanced
                     ? "bg-emerald-500"
                     : isOver
                     ? "bg-destructive"
                     : "bg-amber-500"
                 }`}
-                style={{ width: `${Math.min(100, totalWeight)}%` }}
+                initial={false}
+                animate={{ width: `${Math.min(100, totalWeight)}%` }}
+                transition={{ duration: 0.25 }}
               />
             </div>
           </div>
 
           {criteria.length === 0 && (
-            <div className="text-center py-6 border border-dashed rounded-lg bg-muted/10 text-xs text-muted-foreground">
-              No evaluation criteria added yet. Click &quot;Add Criterion&quot; or choose a template above.
+            <div className="text-center py-8 border border-dashed rounded-xl bg-muted/20 text-xs text-muted-foreground">
+              No evaluation criteria added yet. Click &quot;Add Custom Evaluation Criterion&quot; or choose a template above.
             </div>
           )}
         </CardContent>
@@ -273,15 +276,17 @@ export function ScorecardBuilder({
           return (
             <Card
               key={index}
-              className={`border transition-all duration-200 ${
-                criterion.isMustHave ? "border-amber-500/40 bg-amber-500/[0.02]" : "border-border"
+              className={`border transition-all duration-200 overflow-hidden ${
+                criterion.isMustHave
+                  ? "border-amber-500/40 bg-amber-500/[0.02]"
+                  : "border-border/80 bg-card"
               }`}
             >
               <div className="p-4 space-y-3">
                 {/* Collapsed / Row Summary View */}
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div className="flex items-center gap-3 flex-1 min-w-0">
-                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-muted text-[11px] font-semibold text-muted-foreground">
+                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-muted/80 text-[11px] font-bold text-muted-foreground border border-border/40">
                       {index + 1}
                     </span>
 
@@ -383,49 +388,57 @@ export function ScorecardBuilder({
                 </div>
 
                 {/* Expanded Details: Description & Scoring Rubric */}
-                {isExpanded && (
-                  <div className="pt-3 border-t space-y-3 text-xs">
-                    <div>
-                      <Label className="text-[11px] text-muted-foreground mb-1 block">
-                        Evaluation Description
-                      </Label>
-                      {readOnly ? (
-                        <p className="text-foreground/90">
-                          {criterion.description || "No description provided."}
-                        </p>
-                      ) : (
-                        <Input
-                          value={criterion.description || ""}
-                          onChange={(e) =>
-                            handleCriterionChange(index, "description", e.target.value)
-                          }
-                          placeholder="What specific skills or competencies are being assessed?"
-                          className="h-8 text-xs"
-                        />
-                      )}
-                    </div>
+                <AnimatePresence>
+                  {isExpanded && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: "auto" }}
+                      exit={{ opacity: 0, height: 0 }}
+                      transition={{ duration: 0.16 }}
+                      className="pt-3 border-t border-border/60 space-y-3 text-xs"
+                    >
+                      <div>
+                        <Label className="text-[11px] font-semibold text-muted-foreground mb-1 block">
+                          Evaluation Description
+                        </Label>
+                        {readOnly ? (
+                          <p className="text-foreground/90">
+                            {criterion.description || "No description provided."}
+                          </p>
+                        ) : (
+                          <Input
+                            value={criterion.description || ""}
+                            onChange={(e) =>
+                              handleCriterionChange(index, "description", e.target.value)
+                            }
+                            placeholder="What specific skills or competencies are being assessed?"
+                            className="h-8 text-xs"
+                          />
+                        )}
+                      </div>
 
-                    <div>
-                      <Label className="text-[11px] text-muted-foreground mb-1 block">
-                        Scoring Rubric & Guidelines (Scale: 1 to 10)
-                      </Label>
-                      {readOnly ? (
-                        <div className="bg-muted/40 p-2.5 rounded-md font-mono text-[11px] text-foreground/80 leading-relaxed whitespace-pre-wrap">
-                          {criterion.guidelines || "No specific guidelines specified."}
-                        </div>
-                      ) : (
-                        <Textarea
-                          value={criterion.guidelines || ""}
-                          onChange={(e) =>
-                            handleCriterionChange(index, "guidelines", e.target.value)
-                          }
-                          placeholder="e.g. 1-4: Basic syntax only; 5-7: Strong collections & concurrency; 8-10: Expert low-latency, async pipelines, JVM tuning."
-                          className="text-xs font-mono min-h-[60px]"
-                        />
-                      )}
-                    </div>
-                  </div>
-                )}
+                      <div>
+                        <Label className="text-[11px] font-semibold text-muted-foreground mb-1 block">
+                          Scoring Rubric & Guidelines (Scale: 1 to 10)
+                        </Label>
+                        {readOnly ? (
+                          <div className="bg-muted/40 p-2.5 rounded-lg font-mono text-[11px] text-foreground/80 leading-relaxed whitespace-pre-wrap">
+                            {criterion.guidelines || "No specific guidelines specified."}
+                          </div>
+                        ) : (
+                          <Textarea
+                            value={criterion.guidelines || ""}
+                            onChange={(e) =>
+                              handleCriterionChange(index, "guidelines", e.target.value)
+                            }
+                            placeholder="e.g. 1-4: Basic syntax only; 5-7: Strong collections & concurrency; 8-10: Expert low-latency, async pipelines, JVM tuning."
+                            className="text-xs font-mono min-h-[60px]"
+                          />
+                        )}
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
             </Card>
           );

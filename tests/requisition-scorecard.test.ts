@@ -99,3 +99,4 @@ test("Scorecard Validation: Rejects minScore >= maxScore", () => {
     true
   );
 });
+

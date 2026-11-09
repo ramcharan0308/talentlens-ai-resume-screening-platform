@@ -16,6 +16,10 @@ import type {
   ScorecardCriterion,
   Organization,
   User,
+  Candidate,
+  UploadedDocument,
+  BatchUploadJob,
+  BatchFileItem,
 } from "@prisma/client";
 
 export {
@@ -36,6 +40,10 @@ export type {
   ScorecardCriterion,
   Organization,
   User,
+  Candidate,
+  UploadedDocument,
+  BatchUploadJob,
+  BatchFileItem,
 };
 
 /**
@@ -79,6 +87,7 @@ export interface CreateRequisitionInput {
   coreSkills?: string[];
   jobDescription: string;
   status?: RequisitionStatus;
+  clientOrganizationId?: string | null;
   scorecardCriteria?: ScorecardCriterionInput[];
 }
 
@@ -96,6 +105,7 @@ export interface UpdateRequisitionInput {
   coreSkills?: string[];
   jobDescription?: string;
   status?: RequisitionStatus;
+  clientOrganizationId?: string | null;
 }
 
 /**
@@ -104,6 +114,7 @@ export interface UpdateRequisitionInput {
 export interface RequisitionDetail extends Requisition {
   createdBy: Pick<User, "id" | "name" | "email" | "role">;
   organization: Pick<Organization, "id" | "name" | "type">;
+  clientOrganization?: Pick<Organization, "id" | "name" | "type"> | null;
   scorecardCriteria: ScorecardCriterion[];
   _count?: {
     applications: number;

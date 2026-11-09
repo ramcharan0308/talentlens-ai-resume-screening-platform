@@ -41,3 +41,4 @@ export async function getDefaultAgencyAndRecruiter() {
 
   return { agency, recruiter };
 }
+

@@ -1,40 +1,95 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { requireAuth } from "@/lib/auth-guard";
+import { CLIENT_VISIBLE_APPLICATION_STATUSES } from "@/lib/permissions";
 import { validateRequisitionInput } from "@/lib/validations/requisition";
-import { RequisitionStatus } from "@prisma/client";
+import { RequisitionStatus, UserRole, OrganizationType } from "@prisma/client";
 
-// GET /api/requisitions/[id] - Fetch single requisition details
+// GET /api/requisitions/[id] - Fetch single requisition details with tenant isolation
 export async function GET(
   request: NextRequest,
   context: { params: Promise<{ id: string }> }
 ) {
   try {
+    const authResult = await requireAuth(request);
+    if (authResult instanceof NextResponse) {
+      return authResult;
+    }
+    const { user } = authResult;
+
     const { id } = await context.params;
 
-    const requisition = await prisma.requisition.findUnique({
-      where: { id },
-      include: {
-        scorecardCriteria: {
-          orderBy: { orderIndex: "asc" },
+    // Tenant-isolated lookup
+    let requisition;
+
+    if (user.organizationType === OrganizationType.AGENCY) {
+      requisition = await prisma.requisition.findFirst({
+        where: {
+          id,
+          organizationId: user.organizationId,
         },
-        createdBy: {
-          select: { id: true, name: true, email: true, role: true },
-        },
-        organization: {
-          select: { id: true, name: true, type: true },
-        },
-        _count: {
-          select: {
-            applications: true,
-            batchJobs: true,
+        include: {
+          scorecardCriteria: {
+            orderBy: { orderIndex: "asc" },
+          },
+          createdBy: {
+            select: { id: true, name: true, email: true, role: true },
+          },
+          organization: {
+            select: { id: true, name: true, type: true },
+          },
+          clientOrganization: {
+            select: { id: true, name: true, type: true },
+          },
+          _count: {
+            select: {
+              applications: true,
+              batchJobs: true,
+            },
           },
         },
-      },
-    });
+      });
+    } else if (user.role === UserRole.CLIENT_HIRING_MGR) {
+      requisition = await prisma.requisition.findFirst({
+        where: {
+          id,
+          OR: [
+            { clientOrganizationId: user.organizationId },
+            {
+              applications: {
+                some: {
+                  clientOrganizationId: user.organizationId,
+                  status: { in: CLIENT_VISIBLE_APPLICATION_STATUSES },
+                },
+              },
+            },
+          ],
+        },
+        include: {
+          scorecardCriteria: {
+            orderBy: { orderIndex: "asc" },
+          },
+          createdBy: {
+            select: { id: true, name: true, role: true },
+          },
+          organization: {
+            select: { id: true, name: true, type: true },
+          },
+          clientOrganization: {
+            select: { id: true, name: true, type: true },
+          },
+          _count: {
+            select: {
+              applications: true,
+            },
+          },
+        },
+      });
+    }
 
     if (!requisition) {
       return NextResponse.json(
-        { success: false, error: "Requisition not found" },
+        { success: false, error: "Requisition not found or access denied." },
         { status: 404 }
       );
     }
@@ -55,11 +110,32 @@ export async function PATCH(
   context: { params: Promise<{ id: string }> }
 ) {
   try {
+    const authResult = await requireAuth(request, [
+      UserRole.RECRUITER,
+      UserRole.DELIVERY_HEAD,
+    ]);
+    if (authResult instanceof NextResponse) {
+      return authResult;
+    }
+    const { user } = authResult;
+
+    const contentType = request.headers.get("content-type") || "";
+    if (!contentType.toLowerCase().includes("application/json")) {
+      return NextResponse.json(
+        { success: false, error: "Unsupported Media Type: application/json required." },
+        { status: 415 }
+      );
+    }
+
     const { id } = await context.params;
     const body = await request.json();
 
-    const existing = await prisma.requisition.findUnique({
-      where: { id },
+    // Verify ownership strictly within user's agency
+    const existing = await prisma.requisition.findFirst({
+      where: {
+        id,
+        organizationId: user.organizationId,
+      },
       include: {
         scorecardCriteria: true,
       },
@@ -67,7 +143,7 @@ export async function PATCH(
 
     if (!existing) {
       return NextResponse.json(
-        { success: false, error: "Requisition not found" },
+        { success: false, error: "Requisition not found or access denied." },
         { status: 404 }
       );
     }
@@ -81,7 +157,47 @@ export async function PATCH(
       );
     }
 
-    // 2. Status Transition Check: activating requires criteria summing to 100%
+    // 2. Validate client organization assignment if provided
+    const updateData: Record<string, unknown> = {};
+    let isClientOrgUpdated = false;
+    let newClientOrgName: string | null = null;
+    if (body.clientOrganizationId !== undefined) {
+      if (body.clientOrganizationId === null || body.clientOrganizationId === "") {
+        updateData.clientOrganizationId = null;
+        if (existing.clientOrganizationId !== null) {
+          isClientOrgUpdated = true;
+        }
+      } else {
+        const clientOrg = await prisma.organization.findFirst({
+          where: {
+            id: body.clientOrganizationId,
+            type: OrganizationType.CLIENT,
+          },
+        });
+
+        if (!clientOrg) {
+          return NextResponse.json(
+            { success: false, error: "Target organization is invalid or not a client organization." },
+            { status: 400 }
+          );
+        }
+
+        if (clientOrg.agencyId && clientOrg.agencyId !== user.organizationId) {
+          return NextResponse.json(
+            { success: false, error: "Client organization belongs to another agency. Cross-agency assignment is forbidden." },
+            { status: 403 }
+          );
+        }
+
+        updateData.clientOrganizationId = clientOrg.id;
+        newClientOrgName = clientOrg.name;
+        if (existing.clientOrganizationId !== clientOrg.id) {
+          isClientOrgUpdated = true;
+        }
+      }
+    }
+
+    // 3. Status Transition Check: activating requires criteria summing to 100%
     if (body.status === RequisitionStatus.ACTIVE && existing.status !== RequisitionStatus.ACTIVE) {
       const totalWeight = existing.scorecardCriteria.reduce((sum, c) => sum + c.weight, 0);
       if (existing.scorecardCriteria.length === 0 || totalWeight !== 100) {
@@ -95,9 +211,7 @@ export async function PATCH(
       }
     }
 
-    // 3. Prepare update data
-    const updateData: Record<string, unknown> = {};
-
+    // 4. Prepare update data
     if (body.title !== undefined) updateData.title = body.title.trim();
     if (body.department !== undefined) updateData.department = body.department?.trim() || null;
     if (body.location !== undefined) updateData.location = body.location?.trim() || null;
@@ -127,10 +241,13 @@ export async function PATCH(
         ? body.coreSkills.map((s: string) => s.trim()).filter(Boolean)
         : [];
     }
-    if (body.jobDescription !== undefined) updateData.jobDescription = body.jobDescription.trim();
-    if (body.status !== undefined) updateData.status = body.status;
+    if (body.jobDescription !== undefined) {
+      updateData.jobDescription = body.jobDescription.trim();
+    }
+    if (body.status !== undefined && Object.values(RequisitionStatus).includes(body.status)) {
+      updateData.status = body.status;
+    }
 
-    // 4. Update in database with audit log
     const updated = await prisma.$transaction(async (tx) => {
       const result = await tx.requisition.update({
         where: { id },
@@ -140,21 +257,18 @@ export async function PATCH(
             orderBy: { orderIndex: "asc" },
           },
           createdBy: {
-            select: { id: true, name: true, email: true, role: true },
+            select: { id: true, name: true, email: true },
           },
-          _count: {
-            select: {
-              applications: true,
-              batchJobs: true,
-            },
+          clientOrganization: {
+            select: { id: true, name: true, type: true },
           },
         },
       });
 
       await tx.auditLog.create({
         data: {
-          actorId: existing.createdById,
-          organizationId: existing.organizationId,
+          actorId: user.id,
+          organizationId: user.organizationId,
           action: body.status && body.status !== existing.status ? "REQUISITION_STATUS_CHANGED" : "REQUISITION_UPDATED",
           entityType: "Requisition",
           entityId: existing.id,
@@ -165,6 +279,23 @@ export async function PATCH(
           },
         },
       });
+
+      if (isClientOrgUpdated) {
+        await tx.auditLog.create({
+          data: {
+            actorId: user.id,
+            organizationId: user.organizationId,
+            action: "REQUISITION_CLIENT_ASSIGNED",
+            entityType: "Requisition",
+            entityId: existing.id,
+            metadata: {
+              previousClientOrganizationId: existing.clientOrganizationId,
+              newClientOrganizationId: updateData.clientOrganizationId ?? null,
+              clientOrganizationName: newClientOrgName,
+            },
+          },
+        });
+      }
 
       return result;
     });
@@ -185,10 +316,22 @@ export async function DELETE(
   context: { params: Promise<{ id: string }> }
 ) {
   try {
+    const authResult = await requireAuth(request, [
+      UserRole.RECRUITER,
+      UserRole.DELIVERY_HEAD,
+    ]);
+    if (authResult instanceof NextResponse) {
+      return authResult;
+    }
+    const { user } = authResult;
+
     const { id } = await context.params;
 
-    const existing = await prisma.requisition.findUnique({
-      where: { id },
+    const existing = await prisma.requisition.findFirst({
+      where: {
+        id,
+        organizationId: user.organizationId,
+      },
       include: {
         _count: {
           select: { applications: true, batchJobs: true },
@@ -198,7 +341,7 @@ export async function DELETE(
 
     if (!existing) {
       return NextResponse.json(
-        { success: false, error: "Requisition not found" },
+        { success: false, error: "Requisition not found or access denied." },
         { status: 404 }
       );
     }

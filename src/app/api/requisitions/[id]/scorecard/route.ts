@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { requireAuth } from "@/lib/auth-guard";
+import { CLIENT_VISIBLE_APPLICATION_STATUSES } from "@/lib/permissions";
 import { validateScorecardCriteria } from "@/lib/validations/requisition";
 import { ScorecardCriterionInput } from "@/types";
-import { RequisitionStatus } from "@prisma/client";
+import { RequisitionStatus, UserRole, OrganizationType } from "@prisma/client";
 
 // GET /api/requisitions/[id]/scorecard - Fetch scorecard criteria for a requisition
 export async function GET(
@@ -10,16 +12,44 @@ export async function GET(
   context: { params: Promise<{ id: string }> }
 ) {
   try {
+    const authResult = await requireAuth(request);
+    if (authResult instanceof NextResponse) {
+      return authResult;
+    }
+    const { user } = authResult;
+
     const { id } = await context.params;
 
-    const requisition = await prisma.requisition.findUnique({
-      where: { id },
-      select: { id: true, title: true, status: true },
-    });
+    // Tenant-isolated lookup
+    let requisition;
+    if (user.organizationType === OrganizationType.AGENCY) {
+      requisition = await prisma.requisition.findFirst({
+        where: { id, organizationId: user.organizationId },
+        select: { id: true, title: true, status: true },
+      });
+    } else if (user.role === UserRole.CLIENT_HIRING_MGR) {
+      requisition = await prisma.requisition.findFirst({
+        where: {
+          id,
+          OR: [
+            { clientOrganizationId: user.organizationId },
+            {
+              applications: {
+                some: {
+                  clientOrganizationId: user.organizationId,
+                  status: { in: CLIENT_VISIBLE_APPLICATION_STATUSES },
+                },
+              },
+            },
+          ],
+        },
+        select: { id: true, title: true, status: true },
+      });
+    }
 
     if (!requisition) {
       return NextResponse.json(
-        { success: false, error: "Requisition not found" },
+        { success: false, error: "Requisition not found or access denied." },
         { status: 404 }
       );
     }
@@ -57,16 +87,37 @@ export async function PUT(
   context: { params: Promise<{ id: string }> }
 ) {
   try {
+    const authResult = await requireAuth(request, [
+      UserRole.RECRUITER,
+      UserRole.DELIVERY_HEAD,
+    ]);
+    if (authResult instanceof NextResponse) {
+      return authResult;
+    }
+    const { user } = authResult;
+
+    const contentType = request.headers.get("content-type") || "";
+    if (!contentType.toLowerCase().includes("application/json")) {
+      return NextResponse.json(
+        { success: false, error: "Unsupported Media Type: application/json required." },
+        { status: 415 }
+      );
+    }
+
     const { id } = await context.params;
     const body = await request.json();
 
-    const requisition = await prisma.requisition.findUnique({
-      where: { id },
+    // Verify agency ownership
+    const requisition = await prisma.requisition.findFirst({
+      where: {
+        id,
+        organizationId: user.organizationId,
+      },
     });
 
     if (!requisition) {
       return NextResponse.json(
-        { success: false, error: "Requisition not found" },
+        { success: false, error: "Requisition not found or access denied." },
         { status: 404 }
       );
     }
@@ -92,7 +143,7 @@ export async function PUT(
       );
     }
 
-    // Transactionally update criteria
+    // Transactionally update criteria with authenticated actor in AuditLog
     const updatedCriteria = await prisma.$transaction(async (tx) => {
       // Remove old criteria
       await tx.scorecardCriterion.deleteMany({
@@ -116,11 +167,11 @@ export async function PUT(
         });
       }
 
-      // Record audit log
+      // Record audit log with authenticated user and tenant
       await tx.auditLog.create({
         data: {
-          actorId: requisition.createdById,
-          organizationId: requisition.organizationId,
+          actorId: user.id,
+          organizationId: user.organizationId,
           action: "SCORECARD_UPDATED",
           entityType: "Scorecard",
           entityId: id,

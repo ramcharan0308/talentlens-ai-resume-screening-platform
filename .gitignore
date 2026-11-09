@@ -24,7 +24,14 @@
 # Uploads & Temporary files (for local file driver)
 /public/uploads/
 /uploads/
+/storage/
 *.tmp
+
+# Temporary QA artifacts & Scratch directories (Do NOT use blanket *.png)
+/scratch/
+/screenshots/
+/homepage*.png
+/login_screen.png
 
 # Operating System Files
 .DS_Store
