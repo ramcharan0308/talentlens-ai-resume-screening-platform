@@ -3,6 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { requireAuth } from "@/lib/auth-guard";
 import { OrganizationType, UserRole } from "@prisma/client";
 
+export const dynamic = "force-dynamic";
+
 // GET /api/clients - List client organizations belonging to authenticated agency
 export async function GET(req: NextRequest) {
   try {

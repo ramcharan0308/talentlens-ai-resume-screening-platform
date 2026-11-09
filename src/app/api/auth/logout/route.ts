@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { invalidateSession, clearSessionCookie, SESSION_COOKIE_NAME, validateCsrf } from "@/lib/auth";
 
+export const dynamic = "force-dynamic";
+
 export async function POST(req: NextRequest) {
   try {
     // 1. Validate CSRF Origin

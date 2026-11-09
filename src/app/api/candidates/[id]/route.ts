@@ -4,6 +4,8 @@ import { requireAuth } from "@/lib/auth-guard";
 import { CLIENT_VISIBLE_APPLICATION_STATUSES, Permissions } from "@/lib/permissions";
 import { UserRole, OrganizationType } from "@prisma/client";
 
+export const dynamic = "force-dynamic";
+
 export async function GET(
   req: NextRequest,
   context: { params: Promise<{ id: string }> }

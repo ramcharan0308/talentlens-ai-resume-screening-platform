@@ -5,6 +5,8 @@ import { Permissions } from "@/lib/permissions";
 import { getStorageProvider } from "@/lib/storage";
 import { UserRole, OrganizationType } from "@prisma/client";
 
+export const dynamic = "force-dynamic";
+
 export async function GET(
   req: NextRequest,
   context: { params: Promise<{ id: string }> }

@@ -1,6 +1,8 @@
 import { requireRetentionPageAuth } from "@/lib/page-auth";
 import { RetentionClientView } from "./retention-client";
 
+export const dynamic = "force-dynamic";
+
 export const metadata = {
   title: "Candidate Governance & Retention - TalentLens",
   description: "Candidate consent tracking, deletion request lifecycle, and data retention governance.",

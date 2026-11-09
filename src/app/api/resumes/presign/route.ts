@@ -10,6 +10,8 @@ import {
 import { MAX_BATCH_FILES } from "@/lib/ingest/processor";
 import { UserRole } from "@prisma/client";
 
+export const dynamic = "force-dynamic";
+
 interface PresignFileInput {
   fileName: string;
   fileSizeBytes: number;

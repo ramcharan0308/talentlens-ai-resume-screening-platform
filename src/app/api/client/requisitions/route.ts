@@ -4,6 +4,8 @@ import { prisma } from "@/lib/prisma";
 import { ApplicationStatus, OrganizationType, UserRole } from "@prisma/client";
 import { CLIENT_VISIBLE_APPLICATION_STATUSES } from "@/lib/permissions";
 
+export const dynamic = "force-dynamic";
+
 export async function GET(req: NextRequest) {
   try {
     const authResult = await requireAuth(req);

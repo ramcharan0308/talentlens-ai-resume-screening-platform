@@ -2,6 +2,8 @@ import { requirePageAuth } from "@/lib/page-auth";
 import { UserRole } from "@prisma/client";
 import { ClientCandidateDetailView } from "./client-candidate-view";
 
+export const dynamic = "force-dynamic";
+
 export const metadata = {
   title: "Candidate Dossier - TalentLens Client Portal",
   description: "View candidate profile and AI screening evidence.",

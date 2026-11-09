@@ -9,6 +9,8 @@ import {
 import { ScorecardCriterionInput } from "@/types";
 import { RequisitionStatus, Prisma, UserRole, OrganizationType } from "@prisma/client";
 
+export const dynamic = "force-dynamic";
+
 // GET /api/requisitions - List requisitions with tenant isolation, filters and counts
 export async function GET(request: NextRequest) {
   try {

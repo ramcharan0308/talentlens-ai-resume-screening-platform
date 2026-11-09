@@ -6,6 +6,8 @@ import { validateScorecardCriteria } from "@/lib/validations/requisition";
 import { ScorecardCriterionInput } from "@/types";
 import { RequisitionStatus, UserRole, OrganizationType } from "@prisma/client";
 
+export const dynamic = "force-dynamic";
+
 // GET /api/requisitions/[id]/scorecard - Fetch scorecard criteria for a requisition
 export async function GET(
   request: NextRequest,

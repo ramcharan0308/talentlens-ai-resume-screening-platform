@@ -2,6 +2,8 @@ import { requirePageAuth } from "@/lib/page-auth";
 import { UserRole } from "@prisma/client";
 import { ClientDashboardView } from "./client-dashboard";
 
+export const dynamic = "force-dynamic";
+
 export const metadata = {
   title: "Client Hiring Portal - TalentLens",
   description: "Review candidates submitted for your requisitions.",

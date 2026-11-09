@@ -3,6 +3,8 @@ import { requireAuth } from "@/lib/auth-guard";
 import { getRequisitionPipelineData } from "@/lib/pipeline/transition-service";
 import { ApplicationStatus } from "@prisma/client";
 
+export const dynamic = "force-dynamic";
+
 export async function GET(
   request: NextRequest,
   context: { params: Promise<{ id: string }> }

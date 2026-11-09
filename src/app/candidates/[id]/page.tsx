@@ -1,6 +1,8 @@
 import { requireCandidateDetailPageAuth } from "@/lib/page-auth";
 import { CandidateDetailClientView } from "./candidate-detail-client";
 
+export const dynamic = "force-dynamic";
+
 export const metadata = {
   title: "Candidate Dossier - TalentLens",
   description: "Detailed candidate dossier, experience, skills, and verified evidence.",

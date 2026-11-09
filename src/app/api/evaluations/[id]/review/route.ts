@@ -3,6 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { requireAuth } from "@/lib/auth-guard";
 import { UserRole, OrganizationType } from "@prisma/client";
 
+export const dynamic = "force-dynamic";
+
 export async function POST(
   request: NextRequest,
   context: { params: Promise<{ id: string }> }

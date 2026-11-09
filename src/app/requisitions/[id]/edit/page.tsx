@@ -1,6 +1,8 @@
 import { requireRequisitionEditPageAuth } from "@/lib/page-auth";
 import { EditRequisitionClientView } from "./edit-requisition-client";
 
+export const dynamic = "force-dynamic";
+
 export const metadata = {
   title: "Edit Requisition - TalentLens",
   description: "Edit staffing requisition and scorecard criteria.",

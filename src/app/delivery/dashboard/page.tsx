@@ -2,6 +2,8 @@ import { requirePageAuth } from "@/lib/page-auth";
 import { UserRole } from "@prisma/client";
 import { DeliveryDashboardClient } from "./delivery-dashboard-client";
 
+export const dynamic = "force-dynamic";
+
 export const metadata = {
   title: "Delivery Head Dashboard | TalentLens",
   description: "Operational analytics, recruiter productivity, requisition turnaround, and SLA tracking for TalentLens agency leadership.",

@@ -11,6 +11,8 @@ import {
   resetFailedLogins,
 } from "@/lib/auth";
 
+export const dynamic = "force-dynamic";
+
 export async function POST(req: NextRequest) {
   try {
     // 1. Validate CSRF Origin

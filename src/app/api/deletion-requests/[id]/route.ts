@@ -6,6 +6,8 @@ import {
   approveDeletionRequest,
 } from "@/lib/deletion/deletion-service";
 
+export const dynamic = "force-dynamic";
+
 export async function GET(
   req: NextRequest,
   context: { params: Promise<{ id: string }> }

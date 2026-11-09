@@ -5,6 +5,8 @@ import { CLIENT_VISIBLE_APPLICATION_STATUSES } from "@/lib/permissions";
 import { validateRequisitionInput } from "@/lib/validations/requisition";
 import { RequisitionStatus, UserRole, OrganizationType } from "@prisma/client";
 
+export const dynamic = "force-dynamic";
+
 // GET /api/requisitions/[id] - Fetch single requisition details with tenant isolation
 export async function GET(
   request: NextRequest,

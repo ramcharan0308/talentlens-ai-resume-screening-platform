@@ -2,6 +2,8 @@ import { RequisitionForm } from "@/components/requisitions/requisition-form";
 import { requirePageAuth } from "@/lib/page-auth";
 import { UserRole } from "@prisma/client";
 
+export const dynamic = "force-dynamic";
+
 export const metadata = {
   title: "Create Requisition - TalentLens",
   description: "Create and configure a new staffing requisition and scorecard evaluation criteria.",

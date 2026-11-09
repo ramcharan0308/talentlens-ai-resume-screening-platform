@@ -8,6 +8,8 @@ import {
 } from "@/lib/storage";
 import { UserRole } from "@prisma/client";
 
+export const dynamic = "force-dynamic";
+
 /**
  * Local Direct-to-Storage upload endpoint.
  * Mirrors the direct-to-R2 upload flow in local and test environments,

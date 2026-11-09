@@ -1,6 +1,8 @@
 import { requireRequisitionDetailPageAuth } from "@/lib/page-auth";
 import { RequisitionDetailClientView } from "./requisition-detail-client";
 
+export const dynamic = "force-dynamic";
+
 export const metadata = {
   title: "Requisition Details - TalentLens",
   description: "View requisition specification, evaluation criteria, and candidate pipeline.",

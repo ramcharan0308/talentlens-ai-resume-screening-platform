@@ -5,6 +5,8 @@ import {
   DeliveryDashboardFilters,
 } from "@/lib/delivery/analytics-service";
 
+export const dynamic = "force-dynamic";
+
 export async function GET(req: NextRequest) {
   try {
     const authResult = await requireAuth(req);

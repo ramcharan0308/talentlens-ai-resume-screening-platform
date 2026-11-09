@@ -3,6 +3,8 @@ import { requireAuth } from "@/lib/auth-guard";
 import { listDeletionRequests } from "@/lib/deletion/deletion-service";
 import { DeletionRequestStatus } from "@prisma/client";
 
+export const dynamic = "force-dynamic";
+
 export async function GET(req: NextRequest) {
   try {
     const authResult = await requireAuth(req);

@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/auth-guard";
 import { transitionApplicationStage } from "@/lib/pipeline/transition-service";
 
+export const dynamic = "force-dynamic";
+
 export async function POST(
   request: NextRequest,
   context: { params: Promise<{ id: string }> }
