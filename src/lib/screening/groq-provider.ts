@@ -12,8 +12,8 @@ import {
  * https://api.groq.com/openai/v1/chat/completions
  *
  * Supported Free-Tier Models:
- * - "llama-3.3-70b-versatile" (Default: Meta Llama 3.3 70B, high-reasoning, 128k context)
- * - "llama-3.1-8b-instant" (High-speed, lightweight alternative)
+ * - "openai/gpt-oss-120b" (Default: High-reasoning 120B open-weights model)
+ * - Can be overridden via GROQ_MODEL environment variable
  */
 export class GroqScreeningProvider implements ScreeningProvider {
   public id = "groq";
@@ -23,7 +23,7 @@ export class GroqScreeningProvider implements ScreeningProvider {
 
   constructor(apiKey?: string, modelId?: string, apiBaseUrl?: string) {
     this.apiKey = apiKey || process.env.GROQ_API_KEY || "";
-    this.modelId = modelId || process.env.GROQ_MODEL || "llama-3.3-70b-versatile";
+    this.modelId = modelId || process.env.GROQ_MODEL || "openai/gpt-oss-120b";
     this.apiBaseUrl = apiBaseUrl || process.env.GROQ_BASE_URL || "https://api.groq.com/openai/v1";
 
     if (!this.apiKey) {

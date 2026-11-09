@@ -22,13 +22,25 @@ test("GroqScreeningProvider: Instantiation without GROQ_API_KEY throws AI_PROVID
   }
 });
 
-test("GroqScreeningProvider: Instantiation with defaults sets llama-3.3-70b-versatile and https://api.groq.com/openai/v1", () => {
+test("GroqScreeningProvider: Instantiation with defaults sets openai/gpt-oss-120b and https://api.groq.com/openai/v1", () => {
   const provider = new GroqScreeningProvider("gsk_test_dummy_key_12345");
   assert.equal(provider.id, "groq");
-  assert.equal(provider.modelId, "llama-3.3-70b-versatile");
+  assert.equal(provider.modelId, "openai/gpt-oss-120b");
 });
 
-test("GroqScreeningProvider: Custom model and base URL are respected", () => {
+test("GroqScreeningProvider: GROQ_MODEL environment variable overrides default model", () => {
+  const originalModel = process.env.GROQ_MODEL;
+  try {
+    process.env.GROQ_MODEL = "custom/override-model-70b";
+    const provider = new GroqScreeningProvider("gsk_test_dummy_key_12345");
+    assert.equal(provider.modelId, "custom/override-model-70b");
+  } finally {
+    if (originalModel) process.env.GROQ_MODEL = originalModel;
+    else delete process.env.GROQ_MODEL;
+  }
+});
+
+test("GroqScreeningProvider: Custom model and base URL are respected via constructor", () => {
   const provider = new GroqScreeningProvider(
     "gsk_test_dummy_key_12345",
     "llama-3.1-8b-instant",
@@ -49,7 +61,7 @@ test("Groq Provider Resolution: SCREENING_PROVIDER='groq' instantiates Groq with
 
     const provider = getScreeningProvider();
     assert.equal(provider.id, "groq");
-    assert.equal(provider.modelId, "llama-3.3-70b-versatile");
+    assert.equal(provider.modelId, "openai/gpt-oss-120b");
   } finally {
     if (originalGroqKey) process.env.GROQ_API_KEY = originalGroqKey;
     else delete process.env.GROQ_API_KEY;
@@ -135,7 +147,7 @@ test("Groq Provider Evaluation: Successfully parses completion, clamps scores, a
     const mockApiResponse = {
       id: "chatcmpl-test-groq-01",
       object: "chat.completion",
-      model: "llama-3.3-70b-versatile",
+      model: "openai/gpt-oss-120b",
       choices: [
         {
           message: {
@@ -180,7 +192,7 @@ test("Groq Provider Evaluation: Successfully parses completion, clamps scores, a
       assert.equal(headers["Authorization"], "Bearer gsk_dummy_test_token");
 
       const body = JSON.parse(String(init?.body));
-      assert.equal(body.model, "llama-3.3-70b-versatile");
+      assert.equal(body.model, "openai/gpt-oss-120b");
       assert.deepEqual(body.response_format, { type: "json_object" });
 
       return new Response(JSON.stringify(mockApiResponse), {
@@ -202,7 +214,7 @@ test("Groq Provider Evaluation: Successfully parses completion, clamps scores, a
     };
 
     const result = await provider.evaluate(sampleRequest);
-    assert.equal(result.modelId, "llama-3.3-70b-versatile");
+    assert.equal(result.modelId, "openai/gpt-oss-120b");
     assert.equal(result.criteria.length, 3);
 
     // 1. First criterion
@@ -234,7 +246,7 @@ test("Groq Provider Error Handling: HTTP 429 triggers retry logic with backoff",
         return new Response(
           JSON.stringify({
             error: {
-              message: "Rate limit reached for model llama-3.3-70b-versatile",
+              message: "Rate limit reached for model openai/gpt-oss-120b",
               type: "tokens",
               code: "rate_limit_exceeded",
             },

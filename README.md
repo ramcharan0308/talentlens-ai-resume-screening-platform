@@ -127,7 +127,7 @@ The initial schema (`prisma/schema.prisma`) models the following core entities:
 
 TalentLens features a pluggable, swappable AI screening provider architecture prioritizing zero-cost, high-speed inference via **Groq** on its free tier:
 
-* **Primary Provider (Groq)**: Uses Groq's OpenAI-compatible endpoint (`https://api.groq.com/openai/v1`) with free-tier model `llama-3.3-70b-versatile` (or `llama-3.1-8b-instant`). Requires `GROQ_API_KEY`.
+* **Primary Provider (Groq)**: Uses Groq's OpenAI-compatible endpoint (`https://api.groq.com/openai/v1`) with free-tier model `openai/gpt-oss-120b` (configurable via `GROQ_MODEL`). Requires `GROQ_API_KEY`.
 * **Fallback Provider (OpenAI)**: Supported via `OPENAI_API_KEY` with model `gpt-4o-mini`.
 * **Configurable Selection**: Controlled by the `SCREENING_PROVIDER` environment variable (`"groq"` or `"openai"`). If omitted, Groq is automatically prioritized when `GROQ_API_KEY` is present.
 * **Deterministic Weighted Scoring**: Deterministic 0-100 scoring based strictly on 100% weighted scorecard criteria.
