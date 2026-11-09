@@ -34,7 +34,7 @@ export async function POST(req: NextRequest) {
     const ingestItems: IngestItemInput[] = [];
 
     if (isJson) {
-      // 1. Direct-to-storage presigned upload confirmation (R2 / S3 bypasses Vercel 4.5 MB limit)
+      // 1. Direct-to-storage presigned upload confirmation (Supabase Storage bypasses Vercel 4.5 MB limit)
       let body: any;
       try {
         body = await req.json();

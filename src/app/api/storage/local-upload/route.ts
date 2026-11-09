@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
 
 /**
  * Local Direct-to-Storage upload endpoint.
- * Mirrors the direct-to-R2 upload flow in local and test environments,
+ * Mirrors the direct-to-cloud upload flow in local and test environments,
  * ensuring binary data never passes through serverless multipart body parsers.
  */
 export async function PUT(req: NextRequest) {

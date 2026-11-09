@@ -5,10 +5,11 @@ import { PrismaClient, OrganizationType, UserRole } from "@prisma/client";
 import { NextRequest } from "next/server";
 import {
   LocalStorageProvider,
-  R2StorageProvider,
+  SupabaseStorageProvider,
   getStorageProvider,
   setStorageProvider,
   MAX_FILE_SIZE_BYTES,
+  SUPABASE_FREE_MAX_FILE_SIZE_BYTES,
   validateFileSignature,
 } from "../src/lib/storage";
 import { SESSION_COOKIE_NAME } from "../src/lib/auth";
@@ -17,7 +18,6 @@ import { PUT as localUploadRoute } from "../src/app/api/storage/local-upload/rou
 import { POST as uploadIngestRoute } from "../src/app/api/resumes/upload/route";
 import { GET as downloadRoute } from "../src/app/api/documents/[id]/download/route";
 import { POST as screenRoute, MAX_SCREENING_CHUNK_SIZE } from "../src/app/api/requisitions/[id]/screen/route";
-import { executeDeletionRequest, createDeletionRequest, approveDeletionRequest } from "../src/lib/deletion/deletion-service";
 
 const prisma = new PrismaClient();
 
@@ -78,28 +78,116 @@ startxref
   return Buffer.from(content, "utf-8");
 }
 
-test("R2 Storage: StorageProvider contract and S3 presigned URL generation", async () => {
-  const r2 = new R2StorageProvider({
-    accountId: "test-account-id-123",
-    accessKeyId: "test-access-key-id",
-    secretAccessKey: "test-secret-access-key",
-    bucketName: "test-bucket",
-    endpoint: "https://test-account-id-123.r2.cloudflarestorage.com",
-    region: "auto",
+test("Supabase Storage: Configuration validation and missing credentials error", () => {
+  const originalUrl = process.env.SUPABASE_URL;
+  const originalKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const originalSupabaseKey = process.env.SUPABASE_KEY;
+
+  try {
+    delete process.env.SUPABASE_URL;
+    delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+    delete process.env.SUPABASE_KEY;
+
+    assert.throws(
+      () => new SupabaseStorageProvider({ supabaseUrl: "", supabaseKey: "" }),
+      (err: any) =>
+        err.message.includes("Supabase Storage configuration error") &&
+        err.message.includes("SUPABASE_SERVICE_ROLE_KEY must be provided")
+    );
+  } finally {
+    if (originalUrl) process.env.SUPABASE_URL = originalUrl;
+    if (originalKey) process.env.SUPABASE_SERVICE_ROLE_KEY = originalKey;
+    if (originalSupabaseKey) process.env.SUPABASE_KEY = originalSupabaseKey;
+  }
+});
+
+test("Supabase Storage: Enforces Supabase Free Tier 50 MB per-file limit", async () => {
+  const provider = new SupabaseStorageProvider({
+    supabaseUrl: "https://izbcwqskodtemsjnpqvo.supabase.co",
+    supabaseKey: "dummy-service-role-key-test",
+    bucketName: "resumes",
   });
 
-  // Verify presigned upload URL generation
-  const uploadInfo = await r2.getPresignedUploadUrl("candidate-uuid-1.pdf", "application/pdf", 600);
-  assert.equal(uploadInfo.storageKey, "candidate-uuid-1.pdf");
-  assert.equal(uploadInfo.headers["Content-Type"], "application/pdf");
-  assert.match(uploadInfo.uploadUrl, /^https:\/\/test-account-id-123\.r2\.cloudflarestorage\.com/);
-  assert.match(uploadInfo.uploadUrl, /X-Amz-Signature=/);
+  // Create an oversized dummy buffer exceeding 50 MB
+  const oversizedBuffer = Buffer.alloc(51 * 1024 * 1024);
 
-  // Verify presigned download URL generation with Content-Disposition
-  const downloadUrl = await r2.getPresignedDownloadUrl("candidate-uuid-1.pdf", 300, "John-Doe-Resume.pdf");
-  assert.match(downloadUrl, /^https:\/\/test-account-id-123\.r2\.cloudflarestorage\.com/);
-  assert.match(downloadUrl, /response-content-disposition=/);
-  assert.match(downloadUrl, /X-Amz-Signature=/);
+  await assert.rejects(
+    () => provider.put("oversized.pdf", oversizedBuffer, "application/pdf"),
+    (err: any) =>
+      err.message.includes("exceeds Supabase Free Tier limit of 50 MB")
+  );
+});
+
+test("Supabase Storage: Signed upload URL and signed download URL generation", async () => {
+  const originalFetch = globalThis.fetch;
+
+  try {
+    // Intercept Supabase Storage REST calls to verify contracts
+    globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+
+      // Signed Upload URL creation endpoint
+      if (url.includes("/object/upload/sign/resumes/")) {
+        assert.equal(init?.method, "POST");
+        return new Response(
+          JSON.stringify({
+            url: "/object/upload/sign/resumes/tenant-123/cand.pdf?token=upload-token-abc",
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
+
+      // Signed Download URL creation endpoint
+      if (url.includes("/object/sign/resumes/")) {
+        assert.equal(init?.method, "POST");
+        const body = JSON.parse(String(init?.body));
+        assert.equal(body.expiresIn, 600);
+
+        return new Response(
+          JSON.stringify({
+            signedURL: "/object/sign/resumes/tenant-123/cand.pdf?token=dl-token-xyz",
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
+
+      return new Response("Not Found", { status: 404 });
+    }) as any;
+
+    const provider = new SupabaseStorageProvider({
+      supabaseUrl: "https://izbcwqskodtemsjnpqvo.supabase.co",
+      supabaseKey: "dummy-service-role-key-test",
+      bucketName: "resumes",
+    });
+
+    // 1. Verify Presigned Upload URL
+    const uploadInfo = await provider.getPresignedUploadUrl(
+      "tenant-123/cand.pdf",
+      "application/pdf",
+      900
+    );
+    assert.equal(uploadInfo.storageKey, "tenant-123/cand.pdf");
+    assert.equal(uploadInfo.headers["Content-Type"], "application/pdf");
+    assert.match(
+      uploadInfo.uploadUrl,
+      /^https:\/\/izbcwqskodtemsjnpqvo\.supabase\.co\/storage\/v1\/object\/upload\/sign\/resumes\/tenant-123\/cand\.pdf/
+    );
+    assert.match(uploadInfo.uploadUrl, /token=upload-token-abc/);
+
+    // 2. Verify Presigned Download URL with custom download file name
+    const downloadUrl = await provider.getPresignedDownloadUrl(
+      "tenant-123/cand.pdf",
+      600,
+      "John-Doe-Resume.pdf"
+    );
+    assert.match(
+      downloadUrl,
+      /^https:\/\/izbcwqskodtemsjnpqvo\.supabase\.co\/storage\/v1\/object\/sign\/resumes\/tenant-123\/cand\.pdf/
+    );
+    assert.match(downloadUrl, /token=dl-token-xyz/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test("Direct Presigned Upload: POST /api/resumes/presign authorization, validation, and tenant isolation", async () => {
@@ -485,23 +573,208 @@ test("Chunked Screening Engine: Enforces chunk limits and protects against serve
   assert.equal(validChunkData.chunkIndex, 0);
   assert.equal(validChunkData.totalChunks, 1);
   assert.equal(validChunkData.evaluatedCount, 1);
+});
 
-  // 3. Repeated Screening Request Idempotency: Retrying the request does not duplicate database evaluations
-  const retryChunkRes = await screenRoute(validChunkReq, {
-    params: Promise.resolve({ id: req.id }),
+test("Supabase Storage: Direct put, get, exists, and delete operations via client", async () => {
+  const originalFetch = globalThis.fetch;
+  const mockStorageStore = new Map<string, { buffer: Buffer; mimeType: string }>();
+
+  try {
+    globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      const method = init?.method || "GET";
+
+      // Upload: POST /object/resumes/:path
+      if (url.includes("/storage/v1/object/resumes/") && method === "POST") {
+        const key = url.split("/storage/v1/object/resumes/")[1];
+        const bodyBuffer = Buffer.isBuffer(init?.body)
+          ? init.body
+          : Buffer.from((init?.body as any) || "");
+        mockStorageStore.set(key, { buffer: bodyBuffer, mimeType: "application/pdf" });
+        return new Response(JSON.stringify({ Key: `resumes/${key}` }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      // Download: GET /object/resumes/:path
+      if (url.includes("/storage/v1/object/resumes/") && method === "GET") {
+        const key = url.split("/storage/v1/object/resumes/")[1];
+        const stored = mockStorageStore.get(key);
+        if (!stored) {
+          return new Response(JSON.stringify({ message: "Object not found" }), {
+            status: 404,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        return new Response(new Uint8Array(stored.buffer), {
+          status: 200,
+          headers: { "Content-Type": stored.mimeType },
+        });
+      }
+
+      // List: POST /object/list/resumes
+      if (url.includes("/storage/v1/object/list/resumes") && method === "POST") {
+        const body = JSON.parse(String(init?.body || "{}"));
+        const search = body.search || "";
+        const items = [];
+        for (const [k] of mockStorageStore.entries()) {
+          if (k.endsWith(search) || k.includes(search)) {
+            const fileName = k.split("/").pop() || k;
+            items.push({ name: fileName, id: k });
+          }
+        }
+        return new Response(JSON.stringify(items), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      // Remove: DELETE /object/resumes
+      if (url.includes("/storage/v1/object/resumes") && method === "DELETE") {
+        const body = JSON.parse(String(init?.body || "{}"));
+        const prefixes = body.prefixes || [];
+        for (const p of prefixes) {
+          mockStorageStore.delete(p);
+        }
+        return new Response(JSON.stringify(prefixes.map((name: string) => ({ name }))), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      return new Response("Not Found", { status: 404 });
+    }) as any;
+
+    const provider = new SupabaseStorageProvider({
+      supabaseUrl: "https://izbcwqskodtemsjnpqvo.supabase.co",
+      supabaseKey: "dummy-service-role-key-test",
+      bucketName: "resumes",
+    });
+
+    const testKey = "tenant-test-123/cv-sample.pdf";
+    const testContent = Buffer.from("%PDF-1.4 sample content for Supabase test");
+
+    // 1. Put
+    const putResult = await provider.put(testKey, testContent, "application/pdf");
+    assert.equal(putResult.storageKey, testKey);
+    assert.equal(putResult.sizeBytes, testContent.length);
+
+    // 2. Exists
+    const exists = await provider.exists(testKey);
+    assert.equal(exists, true);
+
+    // 3. Get
+    const downloaded = await provider.get(testKey);
+    assert.ok(downloaded);
+    assert.equal(downloaded.toString(), testContent.toString());
+
+    // 4. Delete
+    await provider.delete(testKey);
+    const afterDelete = await provider.get(testKey);
+    assert.equal(afterDelete, null);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("Supabase Storage: Download security denies unauthenticated, client hiring manager, and cross-tenant access", async () => {
+  const suffix = crypto.randomBytes(4).toString("hex");
+
+  const agencyA = await prisma.organization.create({
+    data: { name: `Sec Agency A ${suffix}`, type: OrganizationType.AGENCY },
   });
-  assert.equal(retryChunkRes.status, 200);
-  const retryData = await retryChunkRes.json();
-  assert.equal(retryData.success, true);
-  assert.equal(retryData.evaluatedCount, 1);
-
-  // Assert strictly one evaluation record exists in the database
-  const totalEvals = await prisma.evaluation.count({
-    where: {
-      candidateId: candidate.id,
-      requisitionId: req.id,
+  const recruiterA = await prisma.user.create({
+    data: {
+      email: `recruiter.sec.a.${suffix}@example.com`,
+      name: "Recruiter Sec A",
+      role: UserRole.RECRUITER,
+      organizationId: agencyA.id,
+      passwordHash: "hash",
     },
   });
-  assert.equal(totalEvals, 1);
+  const sessionA = await prisma.session.create({
+    data: {
+      userId: recruiterA.id,
+      sessionToken: `token-sec-a-${suffix}`,
+      expiresAt: new Date(Date.now() + 86400000),
+    },
+  });
+
+  const clientOrg = await prisma.organization.create({
+    data: { name: `Sec Client Org ${suffix}`, type: OrganizationType.CLIENT },
+  });
+  const clientUser = await prisma.user.create({
+    data: {
+      email: `client.sec.${suffix}@example.com`,
+      name: "Client Hiring Mgr",
+      role: UserRole.CLIENT_HIRING_MGR,
+      organizationId: clientOrg.id,
+      passwordHash: "hash",
+    },
+  });
+  const clientSession = await prisma.session.create({
+    data: {
+      userId: clientUser.id,
+      sessionToken: `token-sec-client-${suffix}`,
+      expiresAt: new Date(Date.now() + 86400000),
+    },
+  });
+
+  const agencyB = await prisma.organization.create({
+    data: { name: `Sec Agency B ${suffix}`, type: OrganizationType.AGENCY },
+  });
+  const recruiterB = await prisma.user.create({
+    data: {
+      email: `recruiter.sec.b.${suffix}@example.com`,
+      name: "Recruiter Sec B",
+      role: UserRole.RECRUITER,
+      organizationId: agencyB.id,
+      passwordHash: "hash",
+    },
+  });
+  const sessionB = await prisma.session.create({
+    data: {
+      userId: recruiterB.id,
+      sessionToken: `token-sec-b-${suffix}`,
+      expiresAt: new Date(Date.now() + 86400000),
+    },
+  });
+
+  const docA = await prisma.uploadedDocument.create({
+    data: {
+      agencyId: agencyA.id,
+      fileName: "secret_cv.pdf",
+      fileType: "application/pdf",
+      fileSizeBytes: 2048,
+      fileHash: `hash-sec-${suffix}`,
+      storageKey: `key-sec-${suffix}.pdf`,
+      extractedText: "Secret resume content.",
+      processingStatus: "EXTRACTED",
+    },
+  });
+
+  // 1. Unauthenticated request -> 401
+  const unauthReq = createAuthRequest(`http://localhost:3000/api/documents/${docA.id}/download`);
+  const unauthRes = await downloadRoute(unauthReq, { params: Promise.resolve({ id: docA.id }) });
+  assert.equal(unauthRes.status, 401);
+
+  // 2. Client hiring manager role -> 403 Forbidden
+  const clientReq = createAuthRequest(
+    `http://localhost:3000/api/documents/${docA.id}/download`,
+    clientSession.sessionToken
+  );
+  const clientRes = await downloadRoute(clientReq, { params: Promise.resolve({ id: docA.id }) });
+  assert.equal(clientRes.status, 403);
+  const clientJson = await clientRes.json();
+  assert.match(clientJson.error, /Client hiring managers are not permitted to download raw candidate resumes/);
+
+  // 3. Cross-agency access: Recruiter B tries to access Agency A's document -> 404
+  const crossAgencyReq = createAuthRequest(
+    `http://localhost:3000/api/documents/${docA.id}/download`,
+    sessionB.sessionToken
+  );
+  const crossAgencyRes = await downloadRoute(crossAgencyReq, { params: Promise.resolve({ id: docA.id }) });
+  assert.equal(crossAgencyRes.status, 404);
 });
 

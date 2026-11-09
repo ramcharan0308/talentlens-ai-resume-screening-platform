@@ -76,10 +76,10 @@ export async function GET(
       },
     });
 
-    // Cloudflare R2 / S3 Presigned Private Download: Redirects to a short-lived presigned URL (10 min TTL)
+    // Supabase Storage Presigned Private Download: Redirects to a short-lived signed URL (10 min TTL)
     const driver = (process.env.STORAGE_DRIVER || "local").toLowerCase();
     if (
-      (driver === "r2" || driver === "s3") &&
+      driver === "supabase" &&
       typeof storage.getPresignedDownloadUrl === "function"
     ) {
       const presignedUrl = await storage.getPresignedDownloadUrl(

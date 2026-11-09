@@ -19,7 +19,7 @@ interface PresignFileInput {
 }
 
 /**
- * Generates direct-to-storage presigned upload URLs (Cloudflare R2 / S3)
+ * Generates direct-to-storage presigned upload URLs (Supabase Storage)
  * or local direct-upload URLs. Allows resumes up to 10 MB to be uploaded
  * directly by the browser without passing through Vercel's 4.5 MB function limit.
  */

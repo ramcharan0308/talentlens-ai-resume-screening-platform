@@ -1,7 +1,7 @@
 import fs from "fs/promises";
 import path from "path";
 import crypto from "crypto";
-import { R2StorageProvider } from "./r2-provider";
+import { SupabaseStorageProvider, SUPABASE_FREE_MAX_FILE_SIZE_BYTES } from "./supabase-provider";
 
 export interface StorageProvider {
   put(
@@ -215,8 +215,8 @@ let globalStorageInstance: StorageProvider | null = null;
 export function getStorageProvider(): StorageProvider {
   if (!globalStorageInstance) {
     const driver = (process.env.STORAGE_DRIVER || "local").toLowerCase();
-    if (driver === "r2" || driver === "s3") {
-      globalStorageInstance = new R2StorageProvider();
+    if (driver === "supabase") {
+      globalStorageInstance = new SupabaseStorageProvider();
     } else {
       globalStorageInstance = new LocalStorageProvider();
     }
@@ -228,5 +228,5 @@ export function setStorageProvider(provider: StorageProvider | null): void {
   globalStorageInstance = provider;
 }
 
-export { R2StorageProvider };
+export { SupabaseStorageProvider, SUPABASE_FREE_MAX_FILE_SIZE_BYTES };
 

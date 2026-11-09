@@ -155,7 +155,7 @@ export function ResumeUploadClientView() {
     setUploadProgress(null);
 
     try {
-      // Step 1: Request direct-to-storage presigned upload URLs (Cloudflare R2 / S3)
+      // Step 1: Request direct-to-storage presigned upload URLs (Supabase Storage)
       let presignSuccessful = false;
       let presignData: any = null;
 
